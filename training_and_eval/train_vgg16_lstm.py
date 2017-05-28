@@ -6,13 +6,30 @@ import tensorflow as tf
 import numpy as np
 from datetime import datetime
 from argparse import ArgumentParser
-sys.path.append('../../')  # puts model_depo on the path
-sys.path.insert(0, re.split(__file__, os.path.realpath(__file__))[0])  # puts this experiment into path
 from exp_ops.data_loader import inputs
 from exp_ops.tf_fun import make_dir, softmax_cost, fine_tune_prepare_layers, \
     ft_non_optimized, class_accuracy
 from gedi_config import GEDIconfig
-from model_depo import GEDI_vgg16_trainable_batchnorm_shared as vgg16
+from models import GEDI_vgg16_trainable_batchnorm_shared as vgg16
+
+
+def RNN(x, weights, biases):
+
+    # Prepare data shape to match `rnn` function requirements
+    # Current data input shape: (batch_size, n_steps, n_input)
+    # Required shape: 'n_steps' tensors list of shape (batch_size, n_input)
+
+    # Unstack to get a list of 'n_steps' tensors of shape (batch_size, n_input)
+    x = tf.unstack(x, n_steps, 1)
+
+    # Define a lstm cell with tensorflow
+    lstm_cell = rnn.BasicLSTMCell(n_hidden, forget_bias=1.0)
+
+    # Get lstm cell output
+    outputs, states = rnn.static_rnn(lstm_cell, x, dtype=tf.float32)
+
+    # Linear activation, using rnn inner loop last output
+    return tf.matmul(outputs[-1], weights['out']) + biases['out']
 
 
 # Train or finetune a vgg16 for the GEDI dataset
@@ -30,9 +47,20 @@ def train_vgg16(train_dir=None, validation_dir=None):
                 train_dir, config.tvt_flags[0] + '_' + config.max_file))
 
     # Prepare image normalization values
-    max_value = np.max(meta_data['max_array']).astype(np.float32)
-    # max_value = config.max_gedi
+    max_value = np.nanmax(meta_data['max_array']).astype(np.float32)
+    if max_value == 0:
+        max_value = None
+        print 'Derived max value is 0'
+    else:
+        print 'Normalizing with empirical max.'
+    if 'min_array' in meta_data.keys():
+        min_value = np.min(meta_data['min_array']).astype(np.float32)
+        print 'Normalizing with empirical min.'
+    else:
+        min_value = None
+        print 'Not normalizing with a min.'
     ratio = meta_data['ratio']
+    print 'Ratio is: %s' % ratio
 
     if validation_dir is None:  # Use globals
         validation_data = os.path.join(config.tfrecord_dir, 'val.tfrecords')
@@ -61,14 +89,24 @@ def train_vgg16(train_dir=None, validation_dir=None):
     # Prepare data on CPU
     with tf.device('/cpu:0'):
         train_images, train_labels = inputs(
-            train_data, config.train_batch, im_shape,
+            train_data,
+            config.train_batch,
+            im_shape,
             config.model_image_size[:2],
-            max_value=max_value, train=config.data_augmentations,
-            num_epochs=config.epochs)
+            max_value=max_value,
+            min_value=min_value,
+            train=config.data_augmentations,
+            num_epochs=config.epochs,
+            normalize=config.normalize)
         val_images, val_labels = inputs(
-            validation_data, config.validation_batch, im_shape,
-            config.model_image_size[:2], max_value=max_value,
-            num_epochs=config.epochs)
+            validation_data,
+            config.validation_batch,
+            im_shape,
+            config.model_image_size[:2],
+            max_value=max_value,
+            min_value=min_value,
+            num_epochs=config.epochs,
+            normalize=config.normalize)
         tf.summary.image('train images', train_images)
         tf.summary.image('validation images', val_images)
 
@@ -83,17 +121,40 @@ def train_vgg16(train_dir=None, validation_dir=None):
                 train_images, output_shape=config.output_shape,
                 train_mode=train_mode, batchnorm=config.batchnorm_layers)
 
-            # LSTM over fc8
-            cell = tf.contrib.rnn.BasicLSTMCell(128, state_is_tuple=True)
-            initial_state = cell.zero_state(vgg.fc8.get_shape(), tf.float32)
-            rnn_outputs, rnn_states = tf.nn.dynamic_rnn(
-                cell, vgg.fc8, initial_state=initial_state, time_major=True)
+
+            lstm=tf.nn.rnn_cell.BasicLSTMCell(128)
+            cell=tf.nn.rnn_cell.MultiRNNCell([lstm]*2)
+            inputImgA=tf.TensorArray(tf.string, length)
+            outputLSTM=tf.TensorArray(tf.float32, length)
+            lossLSTM=tf.TensorArray(tf.float32, length)
+            i=tf.constant(0)
+
+
+def cond(i, state, inputImgA, outputLSTM, lossLSTM):
+    return tf.less(i, len(config.num_timepoints))
+
+
+def body(i, state, inputImgA, outputLSTM, lossLSTM, score_layer='fc7'):
+    vgg.build(
+        images,
+        output_shape=config.output_shape,
+        train_mode=train_mode,
+        batchnorm=config.batchnorm_layers)
+    output, state = cell(vgg[score_layer], state)
+    outputLSTM=outputLSTM.write(i, output)
+    it_loss=tf.nn.sparse_softmax_cross_entropy_with_logits(output, label)
+    lossLSTM=lossLSTM.write(i, loss)
+    return (i+1, state, inputImgA, outputLSTM, lossLSTM) 
+
+
+
+
 
             # Prepare the cost function
             if config.balance_cost:
-                cost = softmax_cost(rnn_outputs, train_labels, ratio=ratio)
+                cost = softmax_cost(vgg.fc8, train_labels, ratio=ratio)
             else:
-                cost = softmax_cost(rnn_outputs, train_labels)
+                cost = softmax_cost(vgg.fc8, train_labels)
             tf.summary.scalar("cost", cost)
 
             # Finetune the learning rates
@@ -166,7 +227,7 @@ def train_vgg16(train_dir=None, validation_dir=None):
             duration = time.time() - start_time
             assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
 
-            if step % 100 == 0 and step % 10 == 0:
+            if step % 100 == 0:
                 if validation_data is not False:
                     _, val_acc = sess.run([train_op, val_accuracy])
                 else:
@@ -187,7 +248,7 @@ def train_vgg16(train_dir=None, validation_dir=None):
                     train_acc, val_acc, summary_dir))
 
                 # Save the model checkpoint if it's the best yet
-                if val_acc >= val_max:
+                if 1:  # val_acc >= val_max:
                     saver.save(
                         sess, os.path.join(
                             config.train_checkpoint,

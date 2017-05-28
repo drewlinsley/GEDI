@@ -137,15 +137,24 @@ def read_and_decode(
         normalize=False):
     reader = tf.TFRecordReader()
     _, serialized_example = reader.read(filename_queue)
-    features = tf.parse_single_example(
-        serialized_example,
-        features={
-          'label': tf.FixedLenFeature([], tf.int64),
-          'image': tf.FixedLenFeature([], tf.string),
-          'filename': tf.FixedLenFeature([], tf.string)
-          # flat_shape * 4 (32-bit flaot -> bytes) = 1080000
+    if return_filename:
+        features = tf.parse_single_example(
+            serialized_example,
+            features={
+                   'label': tf.FixedLenFeature([], tf.int64),
+                   'image': tf.FixedLenFeature([], tf.string),
+                   'filename': tf.FixedLenFeature([], tf.string)
                 }
-        )
+            )
+    else:
+        features = tf.parse_single_example(
+            serialized_example,
+            features={
+                   'label': tf.FixedLenFeature([], tf.int64),
+                   'image': tf.FixedLenFeature([], tf.string),
+                }
+            )
+
 
     # Convert from a scalar string tensor (whose single string has
     image = tf.decode_raw(features['image'], tf.float32)

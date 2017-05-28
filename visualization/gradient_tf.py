@@ -16,10 +16,11 @@ from matplotlib import pyplot as plt
 
 
 def hm_normalize(x):
-    return np.abs(x).sum(axis=-1).squeeze()
+    nx = np.abs(x).sum(axis=-1).squeeze()
+    return nx / nx.max()
 
 
-def loop_plot(ims, hms, label, pointer, blur):
+def loop_plot(ims, hms, label, pointer, blur=0):
     for im, hm in zip(ims, hms):
         plot_hms(im, hm, label, pointer, fsize=blur)
     print 'Saved images to %s' % pointer
@@ -136,7 +137,7 @@ def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
                 tyh, ty, thm, tim = sess.run([preds, targets, heatmap_op, val_images])
                 tyh = tyh[0]
                 ty = ty[0]
-                tim = tim / tim.max()
+                tim = (tim / tim.max()).squeeze()
                 yhat += [tyh]
                 y += [ty]
                 if tyh == ty and not tyh:  # True negative
@@ -165,10 +166,11 @@ def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
     dir_list = [dir_pointer]
     dir_list += [os.path.join(dir_pointer, x) for x in stem_dirs]
     [make_dir(d) for d in dir_list]
-    loop_plot(tn_ims, tn_hms, 'True negative', os.path.join(dir_pointer, 'tn'), blur=config.blur)
-    loop_plot(tp_ims, tp_hms, 'True positive', os.path.join(dir_pointer, 'tp'), blur=config.blur)
-    loop_plot(fn_ims, fn_hms, 'False negative', os.path.join(dir_pointer, 'fn'), blur=config.blur)
-    loop_plot(fp_ims, fp_hms, 'False positive', os.path.join(dir_pointer, 'fp'), blur=config.blur)
+    import ipdb;ipdb.set_trace()
+    loop_plot(tn_ims, tn_hms, 'True negative', os.path.join(dir_pointer, 'tn'), blur=config.hm_blur)
+    loop_plot(tp_ims, tp_hms, 'True positive', os.path.join(dir_pointer, 'tp'), blur=config.hm_blur)
+    loop_plot(fn_ims, fn_hms, 'False negative', os.path.join(dir_pointer, 'fn'), blur=config.hm_blur)
+    loop_plot(fp_ims, fp_hms, 'False positive', os.path.join(dir_pointer, 'fp'), blur=config.hm_blur)
 
 
 if __name__ == '__main__':

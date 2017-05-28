@@ -153,8 +153,9 @@ def plot_hms(im, hm, label, pointer, fsize=0):
     if fsize:
         hm = blur(hm, kernel=fsize)
     f, ax = plt.subplots(2)
-    ax[0].imshow(im, cmap='Gray')
-    ax[1].imshow(hm, cmap='Reds')
+    ax[0].imshow(im)
+    cax = ax[1].imshow(hm, cmap='Reds')
+    cbar = fig.colorbar(cax, ticks=[-1, 0, 1])
     plt.title(label)
     plt.savefig('%s.png' % pointer)
 

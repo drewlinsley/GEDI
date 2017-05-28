@@ -48,10 +48,13 @@ After preparing data in a CNN-friendly format, you want to train a model. Look i
 ```python training_and_eval/test_vgg16_tf_svm.py --model_dir=/media/data/GEDI/drew_images/project_files/train_checkpoint/gfp_2017_05_27_13_56_55 --validation_data=/media/data/GEDI/drew_images/project_files/tfrecords/all_rh_analysis_rat_gfp/test.tfrecords --selected_ckpts=32```
 
 ## 4. Visualize model decisions in pixel space -- why did the model make the decisions it made?
-* Option A: Visualize decisions on any dataset. (model_dir is your model, validation_data is the tf-records file you want to test on.)
+* Option A: Visualize decisions on any dataset with the gradient image method. (model_dir is your model, validation_data is the tf-records file you want to test on.)
 
-```python visualization/gedi_lrp_tfrecords.py --model_dir=/media/data/GEDI/drew_images/project_files/train_checkpoint/gfp_2017_05_27_13_56_55 --validation_data=/media/data/GEDI/drew_images/project_files/tfrecords/all_rh_analysis_rat_gfp/test.tfrecords --selected_ckpts=32```
+```python visualization/gradient_tf.py --model_dir=/media/data/GEDI/drew_images/project_files/train_checkpoint/gfp_2017_05_27_13_56_55 --validation_data=/media/data/GEDI/drew_images/project_files/tfrecords/all_rh_analysis_rat_gfp/test.tfrecords --selected_ckpts=32```
  
 
 
 -- Need to add the filename to tfrecords
+-- Finish the LSTM prediction
+-- Finish other viz methods
+-- Finish ratio prediction
