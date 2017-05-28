@@ -242,7 +242,7 @@ def extract_to_tf_records(files, label_list, output_pointer, config, k):
                         # float_list, or bytes_list
                         'label': int64_feature(l),
                         'image': bytes_feature(image.tostring()),
-                        # tf.train.Feature(int64_list=tf.train.Int64List(value=image.astype('int64'))),
+                        'filename': bytes_feature(f)
                     }
                 )
             )

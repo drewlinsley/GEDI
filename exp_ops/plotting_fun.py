@@ -5,6 +5,7 @@ from matplotlib import pyplot as plt
 import seaborn as sns
 import pandas as pd
 from sklearn import metrics
+from scipy.ndimage.filters import gaussian_filter, convolve
 
 
 def acc_index(accs, ckpt_names):
@@ -122,3 +123,38 @@ def plot_cms(ckpt_y, ckpt_yhat, config, output_file ,normalize=True):
     plt.ylabel('True label')
     plt.xlabel('Predicted label')
     plt.savefig(output_file)
+
+
+def gauss_filter(size, sigma, ndims=1):
+    # make sure size is odd
+    x = int(size)
+    if x % 2 == 0:
+        x = x + 1
+    x_zeros = np.zeros((size, size))
+
+    center = int(np.floor(x / 2.))
+
+    x_zeros[center, center] = 1
+    y = gaussian_filter(
+        x_zeros, sigma=sigma)[:, :, None, None]
+    y = np.repeat(y, ndims, axis=2)
+    return y
+
+
+def blur(image, kernel=3, sigma=7):
+    k = tf.get_variable(
+        name='blur', initializer=gauss_filter(
+            kernel, sigma, ndims=int(image.get_shape()[-1])).astype(
+            np.float32), dtype=tf.float32, trainable=False)
+    return tf.nn.conv2d(image, k, [1, 1, 1, 1], padding='SAME')
+
+
+def plot_hms(im, hm, label, pointer, fsize=0):
+    if fsize:
+        hm = blur(hm, kernel=fsize)
+    f, ax = plt.subplots(2)
+    ax[0].imshow(im, cmap='Gray')
+    ax[1].imshow(hm, cmap='Reds')
+    plt.title(label)
+    plt.savefig('%s.png' % pointer)
+

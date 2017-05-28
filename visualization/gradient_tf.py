@@ -1,22 +1,30 @@
-#!/usr/bin/env python
-import os, sys, re, shutil
-import numpy as np
+import os
+import sys
+import time
+import re
 import tensorflow as tf
-import glob
-sys.path.append('../../') #puts model_depo on the path
-sys.path.insert(0,re.split(__file__,os.path.realpath(__file__))[0]) #puts this experiment into path
-from scipy.misc import imresize, imsave
-from exp_ops.gedi_config import GEDIconfig
-from exp_ops.helper_functions import make_dir
-from exp_ops.mosaic_visualizations import maxabs, zscore_channels
-from exp_ops import lrp
-from model_depo import vgg16_trainable_lrp as vgg16
-from ops import utils
-from scipy.ndimage.interpolation import zoom
-from sklearn.preprocessing import OneHotEncoder as oe
+import numpy as np
+import pandas as pd
+from argparse import ArgumentParser
+from exp_ops.data_loader import inputs
+from exp_ops.tf_fun import make_dir, find_ckpts
+from exp_ops.plotting_fun import plot_accuracies, plot_std, plot_cms, plot_pr, plot_cost, plot_hms
+from gedi_config import GEDIconfig
+from models import GEDI_vgg16_trainable_batchnorm_shared as vgg16
+from tqdm import tqdm
+from matplotlib import pyplot as plt
 
 
-# Evaluate your trained model on GEDI images
+def hm_normalize(x):
+    return np.abs(x).sum(axis=-1).squeeze()
+
+
+def loop_plot(ims, hms, label, pointer, blur):
+    for im, hm in zip(ims, hms):
+        plot_hms(im, hm, label, pointer, fsize=blur)
+    print 'Saved images to %s' % pointer
+
+
 def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
     config = GEDIconfig()
     if validation_data is None:  # Use globals
@@ -43,6 +51,7 @@ def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
     except:
         min_value = np.asarray([config.min_gedi])
 
+
     # Find model checkpoints
     ckpts, ckpt_names = find_ckpts(config, model_dir)
     ds_dt_stamp = re.split('/', ckpts[0])[-2]
@@ -61,9 +70,6 @@ def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
 
 
     # Make output directories if they do not exist
-    dir_list = [config.results, out_dir]
-    [make_dir(d) for d in dir_list]
-    # im_shape = get_image_size(config)
     im_shape = config.gedi_image_size
 
     # Prepare data on CPU
@@ -88,40 +94,30 @@ def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
                 val_images, output_shape=config.output_shape)
 
         # Setup validation op
-        scores = vgg.prob
         preds = tf.argmax(vgg.prob, 1)
         targets = tf.cast(val_labels, dtype=tf.int64)
-        oh_targets = tf.one_hot(val_labels, config.output_shape)
-
-        # Masked LRP op
-        heatmap = lrp.lrp(logits*oh_targets, -123.68, 255 - 123.68)
-        # heatmap = lrp.get_lrp_im(sess, F, images, y, img, lab)[0]
+        grad_labels = tf.one_hot(
+            val_labels,
+            config.output_shape,
+            dtype=tf.float32)
+        heatmap_op = tf.gradients(
+            vgg.fc8 * grad_labels,
+            val_images)[0]
 
     # Set up saver
     saver = tf.train.Saver(tf.global_variables())
 
-    # Get class indices for all files
-    if use_true_label:
-        label_key = np.asarray(config.label_directories)
-        class_indices = [np.where(config.which_dataset + '_' + fn == label_key) for fn in labels]
-    else:
-        class_indices = [None] * len(image_filenames)
-
-
-    # Loop through each checkpoint then test the entire validation set
-    ckpt_yhat, ckpt_y, ckpt_scores = [], [], []
-    print '-'*60
-    print 'Beginning visualization'
-    print '-'*60
-
     if selected_ckpts is not None:
         # Select a specific ckpt
-        if selected_ckpts < 0:
-            ckpts = ckpts[selected_ckpts:]
-        else:
-            ckpts = ckpts[:selected_ckpts]
+        ckpts = [ckpts[selected_ckpts]]
+    else:
+        ckpts = ckpts[-1]
 
-    dec_scores, yhat, y, yoh, ims, hms = [], [], [], [], [], []
+    # Loop through each checkpoint then test the entire validation set
+    print '-'*60
+    print 'Beginning evaluation on ckpt: %s' % ckpts
+    print '-'*60
+    yhat, y, tn_hms, tp_hms, fn_hms, fp_hms, tn_ims, tp_ims, fn_ims, fp_ims = [], [], [], [], [], [], [], [], [], []
     for idx, c in tqdm(enumerate(ckpts), desc='Running checkpoints'):
         try:
             # Initialize the graph
@@ -137,13 +133,24 @@ def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
             saver.restore(sess, c)
             start_time = time.time()
             while not coord.should_stop():
-                sc, tyh, ty, tyoh, imb, ihm = sess.run([scores, preds, targets, oh_targets, val_images, heatmap])
-                dec_scores += [sc]
+                tyh, ty, thm, tim = sess.run([preds, targets, heatmap_op, val_images])
+                tyh = tyh[0]
+                ty = ty[0]
+                tim = tim / tim.max()
                 yhat += [tyh]
                 y += [ty]
-                yoh += [tyoh]
-                ims += [imb]
-                hms += [ihm]
+                if tyh == ty and not tyh:  # True negative
+                    tn_hms += [hm_normalize(thm)]
+                    tn_ims += [tim]
+                elif tyh == ty and tyh:  # True positive
+                    tp_hms += [hm_normalize(thm)]
+                    tp_ims += [tim]
+                elif tyh != ty and not tyh:  # False negative
+                    fn_hms += [hm_normalize(thm)]
+                    fn_ims += [tim]
+                elif tyh != ty and tyh:  # False positive
+                    fp_hms += [hm_normalize(thm)]
+                    fp_ims += [tim]
         except tf.errors.OutOfRangeError:
             print 'Batch %d took %.1f seconds' % (
                 idx, time.time() - start_time)
@@ -151,6 +158,17 @@ def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
             coord.request_stop()
         coord.join(threads)
         sess.close()
+
+    # Plot images
+    dir_pointer = os.path.join(config.heatmap_source_images, ds_dt_stamp) 
+    stem_dirs = ['tn', 'tp', 'fn', 'fp']
+    dir_list = [dir_pointer]
+    dir_list += [os.path.join(dir_pointer, x) for x in stem_dirs]
+    [make_dir(d) for d in dir_list]
+    loop_plot(tn_ims, tn_hms, 'True negative', os.path.join(dir_pointer, 'tn'), blur=config.blur)
+    loop_plot(tp_ims, tp_hms, 'True positive', os.path.join(dir_pointer, 'tp'), blur=config.blur)
+    loop_plot(fn_ims, fn_hms, 'False negative', os.path.join(dir_pointer, 'fn'), blur=config.blur)
+    loop_plot(fp_ims, fp_hms, 'False positive', os.path.join(dir_pointer, 'fp'), blur=config.blur)
 
 
 if __name__ == '__main__':
@@ -166,4 +184,3 @@ if __name__ == '__main__':
         default=None, help="Which checkpoint?")
     args = parser.parse_args()
     test_vgg16(**vars(args))
-

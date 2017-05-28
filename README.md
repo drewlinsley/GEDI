@@ -53,3 +53,5 @@ After preparing data in a CNN-friendly format, you want to train a model. Look i
 ```python visualization/gedi_lrp_tfrecords.py --model_dir=/media/data/GEDI/drew_images/project_files/train_checkpoint/gfp_2017_05_27_13_56_55 --validation_data=/media/data/GEDI/drew_images/project_files/tfrecords/all_rh_analysis_rat_gfp/test.tfrecords --selected_ckpts=32```
  
 
+
+-- Need to add the filename to tfrecords

@@ -155,12 +155,14 @@ class GEDIconfig(object):  # at some point use pjoin throughout
         self.heatmap_image_labels = pjoin(
             self.GEDI_path, 'list_of_' + self.which_dataset + '_labels.txt')
 
-        # Images for visualization parameters
+
+        # Gradient image parameters
+        self.blur = 3
+
+        # Sensitivity bubbles visualization parameters
         # > 0 = number of images, < 0 = proportion of images
         self.heatmap_image_amount = 90
         self.heatmap_batch = 10
-
-        # Bubbles parameters
         self.visualization_output = pjoin(
             self.GEDI_path, 'visualizations', self.which_dataset)
         self.generate_plots = True

@@ -153,9 +153,9 @@ def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
     yhat = np.concatenate(yhat)
     
     # Run SVM
-    class_weight = {k: v for k, v in  zip(np.unique(y), meta_data['ratio'][::-1])}
+    #  class_weight = {k: v for k, v in  zip(np.unique(y), meta_data['ratio'][::-1])}
     class_weight = {np.argmax(meta_data['ratio']): meta_data['ratio'].max() / meta_data['ratio'].min()} 
-    svm = LinearSVC(C=1e-4, dual=False)  # , class_weight=class_weight) 
+    svm = LinearSVC(C=1e-3, dual=False)  # , class_weight=class_weight) 
     clf = make_pipeline(preprocessing.StandardScaler(), svm)
     cv_performance = cross_val_score(clf, dec_scores, y, cv=5)
     np.savez(
@@ -166,7 +166,7 @@ def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
         ckpts=ckpts,
         cv_performance=cv_performance)
     p_value = randomization_test(y=y, yhat=yhat)
-    print 'SVM performance: %s%%, p = %s' % (cv_performance * 100, p_value) 
+    print 'SVM performance: %s%%, p = %.5f' % (cv_performance * 100, p_value) 
 
     # Also save a csv with item/guess pairs
     try:

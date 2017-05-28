@@ -133,6 +133,7 @@ def read_and_decode(
         max_value=None,
         min_value=None,
         num_channels=2,
+        return_filename=False,
         normalize=False):
     reader = tf.TFRecordReader()
     _, serialized_example = reader.read(filename_queue)
@@ -141,6 +142,7 @@ def read_and_decode(
         features={
           'label': tf.FixedLenFeature([], tf.int64),
           'image': tf.FixedLenFeature([], tf.string),
+          'filename': tf.FixedLenFeature([], tf.string)
           # flat_shape * 4 (32-bit flaot -> bytes) = 1080000
                 }
         )
@@ -206,7 +208,11 @@ def read_and_decode(
     # Convert label from a scalar uint8 tensor to an int32 scalar.
     label = tf.cast(features['label'], tf.int32)
 
-    return image, label
+    if return_filename:
+        filename = tf.decode_raw(features['filename'], tf.string)
+        return image, label, filename
+    else:
+        return image, label
 
 
 def inputs(
@@ -218,6 +224,7 @@ def inputs(
         num_epochs=None,
         max_value=None,
         min_value=None,
+        return_filename=False,
         normalize=False):
     with tf.name_scope('input'):
         filename_queue = tf.train.string_input_producer(
@@ -226,24 +233,41 @@ def inputs(
 
         # Even when reading in multiple threads, share the filename
         # queue.
-        image, label = read_and_decode(
-            filename_queue=filename_queue,
-            im_size=im_size,
-            model_input_shape=model_input_shape,
-            train=train,
-            max_value=max_value,
-            min_value=min_value,
-            normalize=normalize)
+        if return_filename:
+            image, label, files = read_and_decode(
+                filename_queue=filename_queue,
+                im_size=im_size,
+                model_input_shape=model_input_shape,
+                train=train,
+                max_value=max_value,
+                min_value=min_value,
+                return_filename=return_filename,
+                normalize=normalize)
 
-        # Shuffle the examples and collect them into batch_size batches.
-        # (Internally uses a RandomShuffleQueue.)
-        # We run this in two threads to avoid being a bottleneck.
-        images, sparse_labels = tf.train.shuffle_batch(
-            [image, label],
-            batch_size=batch_size,
-            num_threads=2,
-            capacity=1000 + 3 * batch_size,
-            # Ensures a minimum amount of shuffling of examples.
-            min_after_dequeue=1000)
+            images, sparse_labels, filenames = tf.train.shuffle_batch(
+                [image, label, files],
+                batch_size=batch_size,
+                num_threads=2,
+                capacity=1000 + 3 * batch_size,
+                min_after_dequeue=1000)
 
-    return images, sparse_labels
+            return images, sparse_labels, filenames
+        else:
+            image, label = read_and_decode(
+                filename_queue=filename_queue,
+                im_size=im_size,
+                model_input_shape=model_input_shape,
+                train=train,
+                max_value=max_value,
+                min_value=min_value,
+                return_filename=return_filename,
+                normalize=normalize)
+
+            images, sparse_labels = tf.train.shuffle_batch(
+                [image, label],
+                batch_size=batch_size,
+                num_threads=2,
+                capacity=1000 + 3 * batch_size,
+                min_after_dequeue=1000)
+
+            return images, sparse_labels
