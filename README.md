@@ -52,7 +52,6 @@ roject_files/train_checkpoint/gfp_2017_05_27_13_56_55 --validation_data=/media/d
 ## 4. Visualize model decisions in pixel space -- why did the model make the decisions it made?
 * Option A: Visualize decisions on any dataset. (model_dir is your model, validation_data is the tf-records file you want to test on.)
 
-```python visualization/gedi_lrp_tfrecords.py --model_dir=/media/data/GEDI/drew_images/p
-roject_files/train_checkpoint/gfp_2017_05_27_13_56_55 --validation_data=/media/data/GEDI/drew_images/project_files/tfrecords/all_rh_analysis_rat_gfp/test.tfrecords --selected_ckpts=32```
+```python visualization/gedi_lrp_tfrecords.py --model_dir=/media/data/GEDI/drew_images/project_files/train_checkpoint/gfp_2017_05_27_13_56_55 --validation_data=/media/data/GEDI/drew_images/project_files/tfrecords/all_rh_analysis_rat_gfp/test.tfrecords --selected_ckpts=32```
  
 
