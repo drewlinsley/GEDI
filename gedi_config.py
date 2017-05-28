@@ -5,34 +5,53 @@ from os.path import join as pjoin
 class GEDIconfig(object):  # at some point use pjoin throughout
     def __init__(self):
 
-        self.which_dataset = 'gfp'  # gedi gfp masked_gfp or ratio
+        ##########################
+        # Basic project settings #
+        #########################
+        #  Directory pointers for CNN and GEDI files
+        self.home_dir = '/media/data/GEDI/drew_images/'  # Arbitrary home directory
+        self.project_stem = 'project_files'  # Folder within home where analysis files will go
+        self.original_image_dir = 'original_images'  # Folder within home where TIFF image files exist
+        self.src_dir = '/home/drew/Documents/GEDI_update/'  # Project source directory
 
-        # Parameters for extracting image patches from supplied TIFF files
-        self.home_dir = '/media/data/GEDI/drew_images/'
-        self.project_stem = 'project_files'
-        # The suffix for the original images.
-        # Connected to the prefixes below with a
-        # '2_14_17' # 'middle' # 'human' # 'human_bs'
+        # Choose which image panel you want to run your analyses on:
+        # -- gedi gfp masked_gfp or ratio
+        self.which_dataset = 'gfp'
+
+        # The suffix for tiff image folders that are input for the CNN.
+        # This exists in original_image_dir.
+        # Expectation is that there is a seperate folder per image category (e.g. Live/Dead)
+        # Naming convention is XXX_{self.experiment_image_set}
+        # Some recent examples: 'all_rh_analysis_rat', 'human', 'human_bs'
         self.experiment_image_set = 'all_rh_analysis_rat'
-        # The prefix for the original images/object categories
 
-        ##############
-        blinded = False
-        test_set = True
-        # Typically ['Dead', 'Live']. Use [''] for blinded.
+        # Parameters for preparing CNN image sets
+        blinded = False  # Pass a dataset through a trained CNN without supplying labels
+        test_set = True  # If you have a {Training/Validation} and seperate {Test} image sets
+        self.raw_im_ext = '.tif'  # Extension of neuron images
+        self.im_ext = '.png'  # If you are going from tiff -> image -> CNN image format
+        self.channel = 0  # Which image timepoint do we extract: 0-5 timepoints
+        self.easy_analysis = False  # Set to True if you are simply trying to pass a new image set through a trained model.
+
+        # CNN settings you should feel free to tweak
+        self.vgg16_weight_path = pjoin(  # Location of pretrained CNN weights.
+            self.src_dir, 'pretrained_weights', 'vgg16.npy')
+        self.gedi_image_size = [300, 300, 3]  # Size of GEDI TIFF files.
+        self.output_shape = 2  # How many categories for classification? If Dead/Live this is 2.
+
+        ###########################
+        # Advanced image settings #
+        ###########################
         if blinded:
             self.image_prefixes = ['']
             self.image_prefixes = [self.experiment_image_set]
         else:
-            self.image_prefixes = ['Dead', 'Live']
+            self.image_prefixes = ['Dead', 'Live']  # Image directory prefixes (see self.experiment_image_set)
             # Append the experiment name to the images
             self.image_prefixes = [
                 x + '_' + self.experiment_image_set
                 for x in self.image_prefixes]
-        self.validation_type = 'separate'  # separate validation/training or sampled
-        ##############
 
-        self.original_image_dir = 'original_images'
         self.processed_image_patch_dir = pjoin(
             self.home_dir, self.project_stem, 'image_patches')
         self.raw_im_dirs = [pjoin(
@@ -40,9 +59,6 @@ class GEDIconfig(object):  # at some point use pjoin throughout
         self.output_dirs = [pjoin(
             self.processed_image_patch_dir,
             self.which_dataset + '_' + x) for x in self.image_prefixes]
-        self.raw_im_ext = '.tif'
-        self.im_ext = '.png'  # preserve floating point
-        self.channel = 0  # 0-5 timepoints
         if self.which_dataset == 'gfp':
             self.panel = 0
             self.divide_panel = None
@@ -55,8 +71,8 @@ class GEDIconfig(object):  # at some point use pjoin throughout
         elif self.which_dataset == 'ratio':
             self.panel = 2
             self.divide_panel = 0
-        self.max_gedi = 16117  # 16383.5  # 16383.5 is for background subtraction/None
-        self.min_gedi = 0  # 0  # 0 is for background subtraction/None
+        self.max_gedi = 16117  # Max value of imaging equiptment
+        self.min_gedi = 0  # 0  # Min value of imaging equiptment
 
         # Paths for creating tfrecords.
         self.GEDI_path = pjoin(self.home_dir, self.project_stem)
@@ -72,41 +88,39 @@ class GEDIconfig(object):  # at some point use pjoin throughout
             self.GEDI_path, 'tfrecords',
             self.experiment_image_set + '_' + self.which_dataset + '/')
         # Which sets to produce in seperate tfrecords
-        if blinded:
-            self.tvt_flags = 'val'
-        elif blinded == False and test_set == True:
-            self.tvt_flags = ['train', 'val', 'test']
-            self.test_directory = pjoin(
-                self.GEDI_path, 'test',
-                self.experiment_image_set + '_' + self.which_dataset + '/')
+        if self.easy_analysis:
+            self.tvt_flags = ['train']
         else:
-            self.tvt_flags = ['train', 'val']  # ['train','val','test']
-        self.max_file = 'maximum_value.npz'
+            if blinded:
+                self.tvt_flags = 'val'
+            elif blinded == False and test_set == True:
+                self.tvt_flags = ['train', 'val', 'test']
+                self.test_directory = pjoin(
+                    self.GEDI_path, 'test',
+                    self.experiment_image_set + '_' + self.which_dataset + '/')
+            else:
+                self.tvt_flags = ['train', 'val']  # ['train','val','test']
+        self.max_file = 'maximum_value.npz'  # File to save with empirical max values. Goes into CNN image data directory.
 
         # Data parameters for tfrecords
-        self.train_proportion = 0.9  # validation with 10% of data
-        self.num_threads = 4
-        self.train_shards = 1  # 024 #number of training images per record
-        self.validation_shards = 1  # 024 #number of training images per record
-        self.train_batch = 64  # number of training images per record
-        self.validation_batch = 32  # 64
+        self.train_proportion = 0.9  # If training/validation, proportion of training images. 1 - this is validation.
+        self.num_threads = 4  # Number of CPU threads to use to create the CNN data.
+        self.train_shards = 1
+        self.validation_shards = 1  
+        self.train_batch = 64  # Number of training images per iteration of training.
+        self.validation_batch = 32  # Number of validation images to evaluate after every N iterations. 
         # Normalize GEDIs in uint8 to 0-1 float. May be redundant.
-        self.normalize = False
+        self.normalize = False  # Normalize each image to [0, 1] during preprocessing.
 
-        # Model training
-        self.src_dir = '/home/drew/Documents/tf_experiments/'
-        self.epochs = 200  # Increase since we are augmenting
+
+        #####################
+        # Modeling settings #
+        #####################
+        self.model_image_size = [224, 224, 3]
+        self.epochs = 200  # Number of training epochs
         self.keep_checkpoints = self.epochs  # keep checkpoints at every epoch
         self.train_checkpoint = pjoin(self.GEDI_path, 'train_checkpoint/')
         self.train_summaries = pjoin(self.GEDI_path, 'train_summaries/')
-        self.vgg16_weight_path = pjoin(
-            self.src_dir, 'pretrained_weights', 'vgg16.npy')
-        self.model_image_size = [224, 224, 3]
-        self.gedi_image_size = [300, 300, 3]
-        self.output_shape = 2  # how many categories for classification
-        # choose from ['conv5_1', 'fc6', 'conv5_3', 'fc7', 'fc8', 'conv5_2',
-        # 'conv4_1', 'conv4_2', 'conv4_3', 'conv3_3', 'conv3_2',
-        # 'conv3_1', 'conv1_1', 'conv1_2', 'conv2_2', 'conv2_1']
         self.fine_tune_layers = [
             'conv5_1',
             'conv5_2',
@@ -129,9 +143,9 @@ class GEDIconfig(object):  # at some point use pjoin throughout
         # Model testing
         self.results = pjoin(self.GEDI_path, 'results/')
 
-        ######
-        # Visualization settings
-        ######
+        ##########################
+        # Visualization settings #
+        #########################
 
         # Directory with images for heatmaps
         self.heatmap_source_images = pjoin(

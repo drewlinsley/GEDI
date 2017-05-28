@@ -73,6 +73,8 @@ def find_ckpts(config,dirs=None):
     if dirs is None:
         dirs = sorted(glob(config.train_checkpoint + config.which_dataset + '*'), reverse=True)[0]  # only the newest model run
     ckpts = sorted(glob(dirs + '/*.ckpt*'))
-    ckpts = [ck for ck in ckpts if '.meta' not in ck]  # Do not include meta files
-    ckpt_names = [re.split('-', ck)[-1] for ck in ckpts]
-    return np.asarray(ckpts), np.asarray(ckpt_names)
+    ckpts = [x for x in glob(os.path.join(dirs, '*.ckpt*')) if 'meta' in x]
+    ckpt_num = np.argsort([int(x.split('-')[-1].split('.')[0]) for x in ckpts])
+    ckpt_metas = np.asarray(ckpts)[ckpt_num]
+    ckpt_names = [x.split('.meta')[0] for x  in ckpt_metas]
+    return np.asarray(ckpt_names), ckpt_metas

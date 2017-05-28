@@ -68,9 +68,6 @@ def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
         print 'Using config from gedi_config.py for model:%s' % out_dir
         print '-'*60
 
-    sorted_index = np.argsort(np.asarray([int(x) for x in ckpt_names]))
-    ckpts = ckpts[sorted_index]
-    ckpt_names = ckpt_names[sorted_index]
 
     # Make output directories if they do not exist
     dir_list = [config.results, out_dir]
