@@ -41,7 +41,7 @@ After preparing data in a CNN-friendly format, you want to train a model. Look i
 ## 3. Test data on a model.
 * Option A: Test a model on any dataset (assuming similar charactaristics of both, e.g. both are Rat neurons). (model_dir is your model, validation_data is the tf-records file you want to test on.)
 
-```python training_and_eval/test_vgg16.py --model_dir=/media/data/GEDI/drew_images/project_files/train_checkpoint/gfp_2017_05_27_13_56_55 --validation_data=/media/data/GEDI/drew_images/project_files/tfrecords/all_rh_analysis_rat_gfp/test.tfrecords --selected_ckpts=32```
+```python training_and_eval/test_vgg16.py --model_dir=/media/data/GEDI/drew_images/project_files/train_checkpoint/gfp_2017_05_27_13_56_55 --validation_data=/media/data/GEDI/drew_images/project_files/tfrecords/all_rh_analysis_rat_gfp/val.tfrecords --selected_ckpts=32```
 
 * Option B: Train an SVM on a model to optimize the transfer of its predictions to a new dataset, e.g. trained on rat and tested on human.
 
@@ -50,7 +50,7 @@ After preparing data in a CNN-friendly format, you want to train a model. Look i
 ## 4. Visualize model decisions in pixel space -- why did the model make the decisions it made?
 * Option A: Visualize decisions on any dataset with the gradient image method. (model_dir is your model, validation_data is the tf-records file you want to test on.)
 
-```python visualization/gradient_tf.py --model_dir=/media/data/GEDI/drew_images/project_files/train_checkpoint/gfp_2017_05_27_13_56_55 --validation_data=/media/data/GEDI/drew_images/project_files/tfrecords/all_rh_analysis_rat_gfp/test.tfrecords --selected_ckpts=32```
+```python visualization/gradient_tf.py --model_dir=/media/data/GEDI/drew_images/project_files/train_checkpoint/gfp_2017_05_27_13_56_55 --validation_data=/media/data/GEDI/drew_images/project_files/tfrecords/all_rh_analysis_rat_gfp/val.tfrecords --selected_ckpts=32```
  
 
 

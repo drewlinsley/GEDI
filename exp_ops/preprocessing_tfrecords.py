@@ -183,37 +183,42 @@ def process_image_data(
                 images, labels, tfrecord_writer, im_ext, hw, tf_im_conv)
 
 
-def simple_tf_records(
-        im_key, im_dict, output_file, im_ext, train_shards, hw, normalize):
-    print('Building', output_file)
-    files = im_dict[im_key]
-    all_labels = im_dict[im_key + '_labels']
-    output_pointer = output_file + im_key + '.tfrecords'
-    with tf.python_io.TFRecordWriter(output_pointer) as tfrecord_writer:
-        for idx in tqdm(range(len(files))):
-            image, _ = load_im_batch([files[idx]], hw, normalize)
-            label = all_labels[idx]
-            # construct the Example proto boject
-            example = tf.train.Example(
-                # Example contains a Features proto object
-                features=tf.train.Features(
-                    # Features has a map of string to Feature proto objects
-                    feature={
-                        # A Feature contains one of either a int64_list,
-                        # float_list, or bytes_list
-                        'label': int64_feature(label),
-                        'image': bytes_feature(image.tostring()),
-                        # tf.train.Feature(int64_list=tf.train.Int64List(value=image.astype('int64'))),
-                    }
-                )
-            )
-            # use the proto object to serialize the example to a string
-            serialized = example.SerializeToString()
-            # write the serialized object to disk
-            tfrecord_writer.write(serialized)
+def get_image_ratio(
+        f,
+        ratio_list,
+        timepoints,
+        id_column,
+        regex_match):
+    '''Loop through the ratio list until you find the id_column row that matches f'''
+    f_re = re.search(regex_match, f).group()
+    for r in ratio_list:
+        re_filt = re.search(regex_match, r[id_column])
+        if re_filt is not None:
+            if f_re == re_filt.group():
+                return [r[x] for x in (np.arange(timepoints) + id_column + 1)]
 
 
-def extract_to_tf_records(files, label_list, output_pointer, config, k):
+def features_to_dict(
+        label,
+        image,
+        filename,
+        ratio):
+    if ratio is None:
+        return {
+            'label': label,
+            'image': image,
+            'filename': filename
+        }
+    else:
+        return {
+            'label': label,
+            'image': image,
+            'filename': filename,
+            'ratio': ratio
+        }
+
+
+def extract_to_tf_records(files, label_list, ratio_list, output_pointer, config, k):
     print 'Building: %s' % config.tfrecord_dir
     max_array = np.zeros(len(files))
     min_array = np.zeros(len(files))
@@ -233,17 +238,22 @@ def extract_to_tf_records(files, label_list, output_pointer, config, k):
                 nan_images[idx] = 1
             max_array[idx] = np.max(image)
             # construct the Example proto boject
+            r = get_image_ratio(
+                f,
+                ratio_list,
+                timepoints=config.channel,
+                id_column=config.id_column,
+                rexex_match=config.ratio_regex)
+            feature_dict = features_to_dict(
+                label=l,
+                image=image,
+                filename=f,
+                ratio=r)
             example = tf.train.Example(
                 # Example contains a Features proto object
                 features=tf.train.Features(
                     # Features has a map of string to Feature proto objects
-                    feature={
-                        # A Feature contains one of either a int64_list,
-                        # float_list, or bytes_list
-                        'label': int64_feature(l),
-                        'image': bytes_feature(image.tostring()),
-                        'filename': bytes_feature(f)
-                    }
+                    feature=feature_dict
                 )
             )
             # use the proto object to serialize the example to a string

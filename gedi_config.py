@@ -13,6 +13,7 @@ class GEDIconfig(object):  # at some point use pjoin throughout
         self.project_stem = 'project_files'  # Folder within home where analysis files will go
         self.original_image_dir = 'original_images'  # Folder within home where TIFF image files exist
         self.src_dir = '/home/drew/Documents/GEDI_update/'  # Project source directory
+        self.ratio_stem = 'ratio_csvs'  # Folder within original_image_dir that contains ratio values for each TIFF
 
         # Choose which image panel you want to run your analyses on:
         # -- gedi gfp masked_gfp or ratio
@@ -32,6 +33,11 @@ class GEDIconfig(object):  # at some point use pjoin throughout
         self.im_ext = '.png'  # If you are going from tiff -> image -> CNN image format
         self.channel = 0  # Which image timepoint do we extract: 0-5 timepoints
         self.easy_analysis = False  # Set to True if you are simply trying to pass a new image set through a trained model.
+
+        # Parameters for GEDI ratio CSVS
+        self.ratio_prefix = 'T0_'  # Leave as None if you don't wish to encode ratio information in the CNN data.
+        self.id_column = 1
+        self.ratio_regex = '(\_[a-zA-Z]\d\_\w+)'  # A regex to link the ratio csv with file names
 
         # CNN settings you should feel free to tweak
         self.vgg16_weight_path = pjoin(  # Location of pretrained CNN weights.

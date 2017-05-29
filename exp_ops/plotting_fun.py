@@ -1,4 +1,5 @@
 import re
+import os
 import itertools
 import numpy as np
 from matplotlib import pyplot as plt
@@ -149,13 +150,14 @@ def blur(image, kernel=3, sigma=7):
     return tf.nn.conv2d(image, k, [1, 1, 1, 1], padding='SAME')
 
 
-def plot_hms(im, hm, label, pointer, fsize=0):
+def plot_hms(im, hm, label, pointer, im_idx, fsize=0):
     if fsize:
         hm = blur(hm, kernel=fsize)
     f, ax = plt.subplots(2)
+    plt.title(label)
     ax[0].imshow(im)
     cax = ax[1].imshow(hm, cmap='Reds')
-    cbar = fig.colorbar(cax, ticks=[-1, 0, 1])
-    plt.title(label)
-    plt.savefig('%s.png' % pointer)
+    cbar = f.colorbar(cax, ticks=[-1, 0, 1])
+    plt.savefig(os.path.join(pointer, '%s.png' % im_idx))
+    plt.close(f)
 

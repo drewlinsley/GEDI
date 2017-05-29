@@ -21,13 +21,14 @@ def hm_normalize(x):
 
 
 def loop_plot(ims, hms, label, pointer, blur=0):
-    for im, hm in zip(ims, hms):
-        plot_hms(im, hm, label, pointer, fsize=blur)
+    for idx, (im, hm) in enumerate(zip(ims, hms)):
+        plot_hms(im, hm, label, pointer, im_idx=idx, fsize=blur)
     print 'Saved images to %s' % pointer
 
 
 def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
     config = GEDIconfig()
+    blur_kernel = config.hm_blur
     if validation_data is None:  # Use globals
         validation_data = config.tfrecord_dir + 'val.tfrecords'
         meta_data = np.load(
@@ -166,11 +167,10 @@ def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
     dir_list = [dir_pointer]
     dir_list += [os.path.join(dir_pointer, x) for x in stem_dirs]
     [make_dir(d) for d in dir_list]
-    import ipdb;ipdb.set_trace()
-    loop_plot(tn_ims, tn_hms, 'True negative', os.path.join(dir_pointer, 'tn'), blur=config.hm_blur)
-    loop_plot(tp_ims, tp_hms, 'True positive', os.path.join(dir_pointer, 'tp'), blur=config.hm_blur)
-    loop_plot(fn_ims, fn_hms, 'False negative', os.path.join(dir_pointer, 'fn'), blur=config.hm_blur)
-    loop_plot(fp_ims, fp_hms, 'False positive', os.path.join(dir_pointer, 'fp'), blur=config.hm_blur)
+    loop_plot(tn_ims, tn_hms, 'True negative', os.path.join(dir_pointer, 'tn'), blur=blur_kernel)
+    loop_plot(tp_ims, tp_hms, 'True positive', os.path.join(dir_pointer, 'tp'), blur=blur_kernel)
+    loop_plot(fn_ims, fn_hms, 'False negative', os.path.join(dir_pointer, 'fn'), blur=blur_kernel)
+    loop_plot(fp_ims, fp_hms, 'False positive', os.path.join(dir_pointer, 'fp'), blur=blur_kernel)
 
 
 if __name__ == '__main__':

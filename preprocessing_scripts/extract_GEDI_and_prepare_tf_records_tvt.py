@@ -1,7 +1,7 @@
 import os
 import re
 import sys
-sys.path.insert(0, re.split(__file__, os.path.realpath(__file__))[0])
+import csv
 from gedi_config import GEDIconfig
 from glob import glob
 from exp_ops.tf_fun import make_dir
@@ -34,6 +34,13 @@ def write_labels(flag, im_lists, config):
     return label_list
 
 
+def ratio_csv(x):
+    with open(x, 'rb') as csvfile:
+        reader = csv.reader(csvfile, delimiter='\n')
+    import ipdb;ipdb.set_trace()
+    return reader
+
+
 def extract_tf_records_from_GEDI_tiffs():
     """Extracts data directly from GEDI tiffs and
     inserts them into tf records. This allows us to
@@ -43,6 +50,17 @@ def extract_tf_records_from_GEDI_tiffs():
 
     # Grab the global config
     config = GEDIconfig()
+
+    # If requested load in the ratio file
+    if config.ratio_prefix is not None:
+        ratio_list = np.asarray(read_csv(
+            os.path.join(
+                config.home_dir,
+                config.original_image_dir,
+                config.ratio_stem,
+                '%s%s.csv' % (config.ratio_prefix, config.experiment_image_set)))) 
+    else:
+        ratio_list = None
 
     # Make dirs if they do not exist
     dir_list = [
@@ -70,20 +88,30 @@ def extract_tf_records_from_GEDI_tiffs():
         flag=x, im_lists=im_lists, config=config) for x in tvt_flags]
 
     if type(config.tvt_flags) is str:
-            files = im_lists[config.tvt_flags]
-            label_list = im_labels[config.tvt_flags]
-            output_pointer = os.path.join(
-                config.tfrecord_dir, config.tvt_flags + '.tfrecords')
-            extract_to_tf_records(
-                files, label_list, output_pointer, config,
-                config.tvt_flags)
+        files = im_lists[config.tvt_flags]
+        label_list = im_labels[config.tvt_flags]
+        output_pointer = os.path.join(
+            config.tfrecord_dir, config.tvt_flags + '.tfrecords')
+        extract_to_tf_records(
+            files=files,
+            label_list=label_list,
+            output_pointer=output_pointer,
+            ratio_list=ratio_list,
+            config=config,
+            k=config.tvt_flags)
     else:
         for k in config.tvt_flags:
             files = im_lists[k]
             label_list = im_labels[k]
             output_pointer = os.path.join(
                 config.tfrecord_dir, k + '.tfrecords')
-            extract_to_tf_records(files, label_list, output_pointer, config, k)
+            extract_to_tf_records(
+                files=files,
+                label_list=label_list,
+                output_pointer=output_pointer,
+                ratio_list=ratio_list,
+                config=config,
+                k=k)
 
 
 if __name__ == '__main__':
