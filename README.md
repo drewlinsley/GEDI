@@ -1,5 +1,8 @@
 # GEDI CNN project
 
+## Your first step should be to run the setup script.
+```python setup.py install```
+
 ## If you're using this project you will want to do one of four things (advanced operations, like ratio and time-course prediction will be added below):
 1. Convert data into a CNN-friendly format.
 2. Train a model.
