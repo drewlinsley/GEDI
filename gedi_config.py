@@ -31,11 +31,11 @@ class GEDIconfig(object):  # at some point use pjoin throughout
         test_set = True  # If you have a {Training/Validation} and seperate {Test} image sets
         self.raw_im_ext = '.tif'  # Extension of neuron images
         self.im_ext = '.png'  # If you are going from tiff -> image -> CNN image format
-        self.channel = 0  # Which image timepoint do we extract: 0-5 timepoints
+        self.channel = range(5)  # 0  # Which image timepoint do we extract: 0-5 timepoints
         self.easy_analysis = False  # Set to True if you are simply trying to pass a new image set through a trained model.
 
         # Parameters for GEDI ratio CSVS
-        self.ratio_prefix = 'T0_'  # Leave as None if you don't wish to encode ratio information in the CNN data.
+        self.ratio_prefix = None  # 'T0_'  # Leave as None if you don't wish to encode ratio information in the CNN data.
         self.id_column = 1
         self.ratio_regex = '(\_[a-zA-Z]\d\_\w+)'  # A regex to link the ratio csv with file names
 
