@@ -191,11 +191,8 @@ def get_image_ratio(
         regex_match):
     '''Loop through the ratio list until you find the id_column row that matches f'''
     f_re = re.search(regex_match, f).group()
-    for r in ratio_list:
-        re_filt = re.search(regex_match, r[id_column])
-        if re_filt is not None:
-            if f_re == re_filt.group():
-                return [r[x] for x in (np.arange(timepoints) + id_column + 1)]
+    r = ratio_list[ratio_list['plate_well_neuron'].str.contains(f_re)]
+    return [r[str(x)].as_matrix() for x in timepoints]
 
 
 def features_to_dict(
@@ -227,23 +224,37 @@ def extract_to_tf_records(files, label_list, ratio_list, output_pointer, config,
         for idx, (f, l) in tqdm(
             enumerate(
                 zip(files, label_list)), total=len(files)):
-            image = produce_patch(
-                f,
-                config.channel,
-                config.panel,
-                divide_panel=config.divide_panel,
-                max_value=config.max_gedi,
-                min_value=config.min_gedi).astype(np.float32)
-            if np.isnan(image).sum() != 0:
-                nan_images[idx] = 1
-            max_array[idx] = np.max(image)
-            # construct the Example proto boject
             r = get_image_ratio(
                 f,
                 ratio_list,
                 timepoints=config.channel,
                 id_column=config.id_column,
-                rexex_match=config.ratio_regex)
+                regex_match=config.ratio_regex)
+            if isinstance(config.channel, list):
+                image = []
+                for c in config.channel:
+                    image += [produce_patch(
+                        f,
+                        c,
+                        config.panel,
+                        divide_panel=config.divide_panel,
+                        max_value=config.max_gedi,
+                        min_value=config.min_gedi).astype(np.float32)[None, :, :]]
+                image = np.concatenate(image)
+                import ipdb;ipdb.set_trace()
+                l = (r > config.ratio_cutoff).astype(int)
+            else:
+                image = produce_patch(
+                    f,
+                    config.channel,
+                    config.panel,
+                    divide_panel=config.divide_panel,
+                    max_value=config.max_gedi,
+                    min_value=config.min_gedi).astype(np.float32)
+            if np.isnan(image).sum() != 0:
+                nan_images[idx] = 1
+            max_array[idx] = np.max(image)
+            # construct the Example proto boject
             feature_dict = features_to_dict(
                 label=l,
                 image=image,

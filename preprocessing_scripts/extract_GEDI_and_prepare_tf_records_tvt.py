@@ -2,6 +2,8 @@ import os
 import re
 import sys
 import csv
+import numpy as np
+import pandas as pd
 from gedi_config import GEDIconfig
 from glob import glob
 from exp_ops.tf_fun import make_dir
@@ -34,11 +36,16 @@ def write_labels(flag, im_lists, config):
     return label_list
 
 
-def ratio_csv(x):
+def read_csv(x):
     with open(x, 'rb') as csvfile:
-        reader = csv.reader(csvfile, delimiter='\n')
-    import ipdb;ipdb.set_trace()
-    return reader
+        reader = [x for x in csv.reader(csvfile, delimiter='\n')]
+    columns = reader[0][0].split(',')
+    columns[0] = 'id'
+    columns = [x.strip('"') for x in columns]
+    data = []
+    for r in range(1, len(reader)):
+        data += [[c.strip('"') for c in reader[r][0].split(',')]]
+    return pd.DataFrame(data, columns=columns)
 
 
 def extract_tf_records_from_GEDI_tiffs():
@@ -53,12 +60,12 @@ def extract_tf_records_from_GEDI_tiffs():
 
     # If requested load in the ratio file
     if config.ratio_prefix is not None:
-        ratio_list = np.asarray(read_csv(
+        ratio_list = read_csv(
             os.path.join(
                 config.home_dir,
                 config.original_image_dir,
                 config.ratio_stem,
-                '%s%s.csv' % (config.ratio_prefix, config.experiment_image_set)))) 
+                '%s%s.csv' % (config.ratio_prefix, config.experiment_image_set))) 
     else:
         ratio_list = None
 

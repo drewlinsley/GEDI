@@ -31,19 +31,23 @@ class GEDIconfig(object):  # at some point use pjoin throughout
         test_set = True  # If you have a {Training/Validation} and seperate {Test} image sets
         self.raw_im_ext = '.tif'  # Extension of neuron images
         self.im_ext = '.png'  # If you are going from tiff -> image -> CNN image format
-        self.channel = range(5)  # 0  # Which image timepoint do we extract: 0-5 timepoints
+        self.channel = range(5)  # 0  # Which image timepoint do we extract: 0-5 timepoints; Use a list for this if you're running the timeseries prediction models (LSTM). Use a scalar if you're simply doing frame prediction with a CNN.
         self.easy_analysis = False  # Set to True if you are simply trying to pass a new image set through a trained model.
 
         # Parameters for GEDI ratio CSVS
-        self.ratio_prefix = None  # 'T0_'  # Leave as None if you don't wish to encode ratio information in the CNN data.
+        self.ratio_prefix = 'combined_'  # Leave as None if you don't wish to encode ratio information in the CNN data.
         self.id_column = 1
-        self.ratio_regex = '(\_[a-zA-Z]\d\_\w+)'  # A regex to link the ratio csv with file names
+        self.ratio_regex = '(\_[a-zA-z]\d+\_\d+_)'  # A regex to link the ratio csv with file names
+        self.ratio_cutoff = 0.06
 
         # CNN settings you should feel free to tweak
         self.vgg16_weight_path = pjoin(  # Location of pretrained CNN weights.
             self.src_dir, 'pretrained_weights', 'vgg16.npy')
         self.gedi_image_size = [300, 300, 3]  # Size of GEDI TIFF files.
         self.output_shape = 2  # How many categories for classification? If Dead/Live this is 2.
+
+        # RNN timeseries prediction parameters you should feel free to tweak
+        self.lstm_units = [128, 128]
 
         ###########################
         # Advanced image settings #

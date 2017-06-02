@@ -1,6 +1,6 @@
 # GEDI CNN project
 
-## Your first step should be to run the setup script.
+## Your first step should be to run the setup script. (Use `sudo` if you must).
 ```python setup.py install```
 
 ## If you're using this project you will want to do one of four things (advanced operations, like ratio and time-course prediction will be added below):
@@ -61,3 +61,4 @@ After preparing data in a CNN-friendly format, you want to train a model. Look i
 -- Finish the LSTM prediction
 -- Finish other viz methods
 -- Finish ratio prediction
+-- DOCUMENTATION TO ADD: 1) May need to add folder to pythonpath; 2) Link to vgg16.npy; 3) Link to working GEDI model.                

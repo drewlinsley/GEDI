@@ -13,6 +13,16 @@ from gedi_config import GEDIconfig
 from models import GEDI_vgg16_trainable_batchnorm_shared as vgg16
 
 
+def lstm_layers(layer_units, dropout=0.5):
+    lstms = []
+    for u in layer_units:
+        lstms += [tf.nn.rnn_cell.DropoutWrapper(
+            tf.nn.rnn_cell.BasicLSTMCell(y),
+            input_keep_prob=tf.constant(dropout),
+            output_keep_prob=tf.constant(dropout))]
+    return tf.nn.rnn_cell.MultiRNNCell(lstms)
+
+
 def RNN(x, weights, biases):
 
     # Prepare data shape to match `rnn` function requirements
@@ -111,56 +121,68 @@ def train_vgg16(train_dir=None, validation_dir=None):
         tf.summary.image('validation images', val_images)
 
     # Prepare model on GPU
+    num_timepoints = len(config.channel)
     with tf.device('/gpu:0'):
         with tf.variable_scope('cnn') as scope:
-            vgg = vgg16.Vgg16(
-                vgg16_npy_path=config.vgg16_weight_path,
-                fine_tune_layers=config.fine_tune_layers)
-            train_mode = tf.get_variable(name='training', initializer=True)
-            vgg.build(
-                train_images, output_shape=config.output_shape,
-                train_mode=train_mode, batchnorm=config.batchnorm_layers)
 
-
-            lstm=tf.nn.rnn_cell.BasicLSTMCell(128)
-            cell=tf.nn.rnn_cell.MultiRNNCell([lstm]*2)
-            inputImgA=tf.TensorArray(tf.string, length)
-            outputLSTM=tf.TensorArray(tf.float32, length)
-            lossLSTM=tf.TensorArray(tf.float32, length)
-            i=tf.constant(0)
-
-
-def cond(i, state, inputImgA, outputLSTM, lossLSTM):
-    return tf.less(i, len(config.num_timepoints))
-
-
-def body(i, state, inputImgA, outputLSTM, lossLSTM, score_layer='fc7'):
-    vgg.build(
-        images,
-        output_shape=config.output_shape,
-        train_mode=train_mode,
-        batchnorm=config.batchnorm_layers)
-    output, state = cell(vgg[score_layer], state)
-    outputLSTM=outputLSTM.write(i, output)
-    it_loss=tf.nn.sparse_softmax_cross_entropy_with_logits(output, label)
-    lossLSTM=lossLSTM.write(i, loss)
-    return (i+1, state, inputImgA, outputLSTM, lossLSTM) 
-
-
-
-
-
-            # Prepare the cost function
+            # Prepare the loss function
             if config.balance_cost:
-                cost = softmax_cost(vgg.fc8, train_labels, ratio=ratio)
+                cost_fun = lambda yhat, y: softmax_cost(yhat, y, ratio=ratio)
             else:
-                cost = softmax_cost(vgg.fc8, train_labels)
-            tf.summary.scalar("cost", cost)
+                cost_fun = lambda yhat, y: softmax_cost(yhat, y)
 
-            # Finetune the learning rates
+            def cond(i, state, images, output, loss, num_timepoints):  # NOT CORRECT
+                return tf.less(i, num_timepoints)
 
-            # for all variables in trainable variables
-            # print name if there's duplicates you fucked up
+            def body(
+                    i,
+                    images,
+                    label,
+                    cell,
+                    state,
+                    output,
+                    loss,
+                    vgg,
+                    train_mode,
+                    output_shape,
+                    batchnorm_layers,
+                    cost_fun,
+                    score_layer='fc7'):
+                vgg.build(
+                    images[i],
+                    output_shape=config.output_shape,
+                    train_mode=train_mode,
+                    batchnorm=config.batchnorm_layers)
+                    it_output, state = cell(vgg[score_layer], state)
+                    output= output.write(i, it_output)
+                    it_loss = cost_fun(output, label)
+                    loss = loss.write(i, it_loss)
+                return (i+1, images, label, cell, state, output, loss, vgg, train_mode, output_shape, batchnorm_layers) 
+
+            # Prepare LSTM loop
+            train_mode = tf.get_variable(name='training', initializer=True)
+            cell = lstm_layers(layer_units=config.lstm_units)
+            output = tf.TensorArray(tf.float32, num_timepoints) # output array for LSTM loop -- one slot per timepoint
+            loss = tf.TensorArray(tf.float32, num_timepoints)  # loss for LSTM loop -- one slot per timepoint
+            i = tf.constant(0)  # iterator for LSTM loop
+            loop_vars = [i, images, label, cell, state, output, loss, vgg, train_mode, output_shape, batchnorm_layers, cost_fun]
+
+            # Run the lstm
+            processed_list = tf.while_loop(
+                cond=cond,
+                body=body,
+                loop_vars=loop_vars,
+                back_prop=True,
+                swap_memory=False)
+            output_cell = processed_list[3]
+            output_state = processed_list[4]
+            output_activity = processed_list[5]
+            cost = processed_list[6]
+
+            # Optimize
+            combined_cost = tf.reduce_sum(cost)
+            tf.summary.scalar('cost', combined_cost)
+            import ipdb;ipdb.set_trace()  # Need to make sure lstm weights are being trained
             other_opt_vars, ft_opt_vars = fine_tune_prepare_layers(
                 tf.trainable_variables(), config.fine_tune_layers)
             if config.optimizer == 'adam':

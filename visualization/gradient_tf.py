@@ -20,9 +20,11 @@ def hm_normalize(x):
     return nx / nx.max()
 
 
-def loop_plot(ims, hms, label, pointer, blur=0):
+def loop_plot(ims, hms, label, pointer, blur=0, mi=100):
     for idx, (im, hm) in enumerate(zip(ims, hms)):
         plot_hms(im, hm, label, pointer, im_idx=idx, fsize=blur)
+        if idx == mi:
+            break
     print 'Saved images to %s' % pointer
 
 
