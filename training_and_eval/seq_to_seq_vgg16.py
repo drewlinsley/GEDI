@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import re
 import tensorflow as tf
@@ -12,47 +13,48 @@ from gedi_config import GEDIconfig
 from models import GEDI_vgg16_trainable_batchnorm_shared as vgg16
 
 
+def lstm_layers(layer_units, dropout=0.5):
+    lstms = []
+    for u in layer_units:
+        lstms += [tf.nn.rnn_cell.DropoutWrapper(
+            tf.nn.rnn_cell.BasicLSTMCell(y),
+            input_keep_prob=tf.constant(dropout),
+            output_keep_prob=tf.constant(dropout))]
+    return tf.nn.rnn_cell.MultiRNNCell(lstms)
+
+
 # Train or finetune a vgg16 for the GEDI dataset
 def train_vgg16(train_dir=None, validation_dir=None):
     config = GEDIconfig()
     if train_dir is None:  # Use globals
-        train_data = os.path.join(
-            config.tfrecord_dir,
-            config.tf_record_names['train'])
+        train_data = os.path.join(config.tfrecord_dir, 'train.tfrecords')
         meta_data = np.load(
             os.path.join(
-                config.tfrecord_dir,
-                '%s_%s' % (config.tvt_flags[0], config.max_file)))
+                config.tfrecord_dir, config.tvt_flags[0] + '_' +
+                config.max_file))
     else:
         meta_data = np.load(
             os.path.join(
-                train_dir,
-                '%s_%s' % (config.tvt_flags[0], config.max_file)))
+                train_dir, config.tvt_flags[0] + '_' + config.max_file))
 
     # Prepare image normalization values
-    if config.max_gedi is None:
-        max_value = np.nanmax(meta_data['max_array']).astype(np.float32)
-        if max_value == 0:
-            max_value = None
-            print 'Derived max value is 0'
-        else:
-            print 'Normalizing with empirical max.'
-        if 'min_array' in meta_data.keys():
-            min_value = np.min(meta_data['min_array']).astype(np.float32)
-            print 'Normalizing with empirical min.'
-        else:
-            min_value = None
-            print 'Not normalizing with a min.'
+    max_value = np.nanmax(meta_data['max_array']).astype(np.float32)
+    if max_value == 0:
+        max_value = None
+        print 'Derived max value is 0'
     else:
-        max_value = config.max_gedi
-        min_value = config.min_gedi
+        print 'Normalizing with empirical max.'
+    if 'min_array' in meta_data.keys():
+        min_value = np.min(meta_data['min_array']).astype(np.float32)
+        print 'Normalizing with empirical min.'
+    else:
+        min_value = None
+        print 'Not normalizing with a min.'
     ratio = meta_data['ratio']
     print 'Ratio is: %s' % ratio
 
     if validation_dir is None:  # Use globals
-        validation_data = os.path.join(
-            config.tfrecord_dir,
-            config.tf_record_names['val'])
+        validation_data = os.path.join(config.tfrecord_dir, 'val.tfrecords')
     elif validation_dir is False:
         pass  # Do not use validation data during training
 
@@ -76,10 +78,6 @@ def train_vgg16(train_dir=None, validation_dir=None):
     print '-'*60
 
     # Prepare data on CPU
-    assert os.path.exists(train_data)
-    assert os.path.exists(validation_data)
-    assert os.path.exists(config.vgg16_weight_path)
-    assert os.path.exists()
     with tf.device('/cpu:0'):
         train_images, train_labels = inputs(
             train_data,
@@ -104,27 +102,68 @@ def train_vgg16(train_dir=None, validation_dir=None):
         tf.summary.image('validation images', val_images)
 
     # Prepare model on GPU
+    num_timepoints = len(config.channel)
     with tf.device('/gpu:0'):
         with tf.variable_scope('cnn') as scope:
-            vgg = vgg16.Vgg16(
-                vgg16_npy_path=config.vgg16_weight_path,
-                fine_tune_layers=config.fine_tune_layers)
-            train_mode = tf.get_variable(name='training', initializer=True)
-            vgg.build(
-                train_images, output_shape=config.output_shape,
-                train_mode=train_mode, batchnorm=config.batchnorm_layers)
 
-            # Prepare the cost function
+            # Prepare the loss function
             if config.balance_cost:
-                cost = softmax_cost(vgg.fc8, train_labels, ratio=ratio)
+                cost_fun = lambda yhat, y: softmax_cost(yhat, y, ratio=ratio)
             else:
-                cost = softmax_cost(vgg.fc8, train_labels)
-            tf.summary.scalar("cost", cost)
+                cost_fun = lambda yhat, y: softmax_cost(yhat, y)
 
-            # Finetune the learning rates
+            def cond(i, state, images, output, loss, num_timepoints):  # NOT CORRECT
+                return tf.less(i, num_timepoints)
 
-            # for all variables in trainable variables
-            # print name if there's duplicates you fucked up
+            def body(
+                    i,
+                    images,
+                    label,
+                    cell,
+                    state,
+                    output,
+                    loss,
+                    vgg,
+                    train_mode,
+                    output_shape,
+                    batchnorm_layers,
+                    cost_fun,
+                    score_layer='fc7'):
+                vgg.build(
+                    images[i],
+                    output_shape=config.output_shape,
+                    train_mode=train_mode,
+                    batchnorm=config.batchnorm_layers)
+                    it_output, state = cell(vgg[score_layer], state)
+                    output= output.write(i, it_output)
+                    it_loss = cost_fun(output, label)
+                    loss = loss.write(i, it_loss)
+                return (i+1, images, label, cell, state, output, loss, vgg, train_mode, output_shape, batchnorm_layers) 
+
+            # Prepare LSTM loop
+            train_mode = tf.get_variable(name='training', initializer=True)
+            cell = lstm_layers(layer_units=config.lstm_units)
+            output = tf.TensorArray(tf.float32, num_timepoints) # output array for LSTM loop -- one slot per timepoint
+            loss = tf.TensorArray(tf.float32, num_timepoints)  # loss for LSTM loop -- one slot per timepoint
+            i = tf.constant(0)  # iterator for LSTM loop
+            loop_vars = [i, images, label, cell, state, output, loss, vgg, train_mode, output_shape, batchnorm_layers, cost_fun]
+
+            # Run the lstm
+            processed_list = tf.while_loop(
+                cond=cond,
+                body=body,
+                loop_vars=loop_vars,
+                back_prop=True,
+                swap_memory=False)
+            output_cell = processed_list[3]
+            output_state = processed_list[4]
+            output_activity = processed_list[5]
+            cost = processed_list[6]
+
+            # Optimize
+            combined_cost = tf.reduce_sum(cost)
+            tf.summary.scalar('cost', combined_cost)
+            import ipdb;ipdb.set_trace()  # Need to make sure lstm weights are being trained
             other_opt_vars, ft_opt_vars = fine_tune_prepare_layers(
                 tf.trainable_variables(), config.fine_tune_layers)
             if config.optimizer == 'adam':
@@ -173,9 +212,15 @@ def train_vgg16(train_dir=None, validation_dir=None):
 
     # Start training loop
     np.save(out_dir + 'meta_info', config)
-    step, losses = 0, []  # val_max = 0
+    step, val_max, losses = 0, 0, []
 
     try:
+        # Launch a tensorboard process
+        # response = subprocess.Popen(
+                    # [sys.executable, '-c', 'tensorboard --logdir=%s'
+                    # % (summary_dir)],
+                    # shell=True, stdout=subprocess.PIPE,
+                    # stderr=subprocess.STDOUT) #Start tensorboard
         # print response
         while not coord.should_stop():
             start_time = time.time()
@@ -212,7 +257,7 @@ def train_vgg16(train_dir=None, validation_dir=None):
                             config.train_checkpoint,
                             'model_' + str(step) + '.ckpt'), global_step=step)
                     # Store the new max validation accuracy
-                    # val_max = val_acc
+                    val_max = val_acc
 
             else:
                 # Training status

@@ -31,18 +31,19 @@ class GEDIconfig(object):  # at some point use pjoin throughout
         test_set = True  # If you have a {Training/Validation} and seperate {Test} image sets
         self.raw_im_ext = '.tif'  # Extension of neuron images
         self.im_ext = '.png'  # If you are going from tiff -> image -> CNN image format
-        self.channel = range(5)  # 0  # Which image timepoint do we extract: 0-5 timepoints; Use a list for this if you're running the timeseries prediction models (LSTM). Use a scalar if you're simply doing frame prediction with a CNN.
+        self.channel = 0  # range(5)  # 0  # Which image timepoint do we extract: 0-5 timepoints; Use a list for this if you're running the timeseries prediction models (LSTM). Use a scalar if you're simply doing frame prediction with a CNN.
         self.easy_analysis = False  # Set to True if you are simply trying to pass a new image set through a trained model.
 
         # Parameters for GEDI ratio CSVS
         self.ratio_prefix = 'combined_'  # Leave as None if you don't wish to encode ratio information in the CNN data.
-        self.id_column = 1
+        self.id_column = 'plate_well_neuron'  # 1
         self.ratio_regex = '(\_[a-zA-z]\d+\_\d+_)'  # A regex to link the ratio csv with file names
         self.ratio_cutoff = 0.06
 
         # CNN settings you should feel free to tweak
         self.vgg16_weight_path = pjoin(  # Location of pretrained CNN weights.
-            self.src_dir, 'pretrained_weights', 'vgg16.npy')
+            '/home/drew/Documents/tf_experiments/pretrained_weights',
+            'vgg16.npy')
         self.gedi_image_size = [300, 300, 3]  # Size of GEDI TIFF files.
         self.output_shape = 2  # How many categories for classification? If Dead/Live this is 2.
 
@@ -81,8 +82,8 @@ class GEDIconfig(object):  # at some point use pjoin throughout
         elif self.which_dataset == 'ratio':
             self.panel = 2
             self.divide_panel = 0
-        self.max_gedi = 16117  # Max value of imaging equiptment
-        self.min_gedi = 0  # 0  # Min value of imaging equiptment
+        self.max_gedi = 16117.  # Max value of imaging equiptment (Must be float!). If this is None, scripts will use empirical values.
+        self.min_gedi = 0.  # 0  # Min value of imaging equiptment (Must be float!).
 
         # Paths for creating tfrecords.
         self.GEDI_path = pjoin(self.home_dir, self.project_stem)
@@ -90,13 +91,20 @@ class GEDIconfig(object):  # at some point use pjoin throughout
             self.which_dataset + '_' + x for x in self.image_prefixes]
         self.train_directory = pjoin(
             self.GEDI_path, 'train',
-            self.experiment_image_set + '_' + self.which_dataset + '/')
+            '%s_%s' % (self.experiment_image_set, self.which_dataset))
         self.validation_directory = pjoin(
             self.GEDI_path, 'validation',
-            self.experiment_image_set + '_' + self.which_dataset + '/')
+            '%s_%s' % (self.experiment_image_set, self.which_dataset))
         self.tfrecord_dir = pjoin(
             self.GEDI_path, 'tfrecords',
-            self.experiment_image_set + '_' + self.which_dataset + '/')
+            '%s_%s' % (self.experiment_image_set, self.which_dataset))
+        self.tf_record_train_name = 'all_data_train.tfrecords'
+        self.tf_record_val_name = 'all_data_val.tfrecords'
+        self.tf_record_names = {  # entries must correspond to a self.tvt_flags
+            'train': 'all_data_train.tfrecords',
+            'val': 'all_data_val.tfrecords',
+            'test': 'all_data_test.tfrecords',
+            }
         # Which sets to produce in seperate tfrecords
         if self.easy_analysis:
             self.tvt_flags = ['train']
@@ -132,6 +140,9 @@ class GEDIconfig(object):  # at some point use pjoin throughout
         self.train_checkpoint = pjoin(self.GEDI_path, 'train_checkpoint/')
         self.train_summaries = pjoin(self.GEDI_path, 'train_summaries/')
         self.fine_tune_layers = [
+            'conv4_1',
+            'conv4_2',
+            'conv4_3',
             'conv5_1',
             'conv5_2',
             'conv5_3',
@@ -142,12 +153,16 @@ class GEDIconfig(object):  # at some point use pjoin throughout
         self.batchnorm_layers = ['fc6', 'fc7', 'fc8']
         self.optimizer = 'sgd'  # 'adam'
         self.hold_lr = 1e-8
-        self.new_lr = 1e-4
+        self.new_lr = 3e-4
         # choose from: left_right, up_down, random_crop, random_brightness,
         # random_contrast, rotate
         self.data_augmentations = [
-            'left_right', 'up_down', 'random_crop',
-            'rotate', 'random_brightness', 'random_contrast']
+            'left_right',
+            'up_down',
+            'random_crop',
+            'rotate',
+            'random_brightness',
+            'random_contrast']
         self.balance_cost = True  # True  # True
 
         # Model testing

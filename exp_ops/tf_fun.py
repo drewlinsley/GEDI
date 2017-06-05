@@ -1,4 +1,3 @@
-import re
 import os
 import numpy as np
 import tensorflow as tf
@@ -34,8 +33,8 @@ def ft_optimized(cost, var_list_1, var_list_2, optimizer, lr_1, lr_2):  # applie
 
 
 def ft_non_optimized(cost, other_opt_vars, ft_opt_vars, optimizer, lr_1, lr_2):
-    op1 = tf.train.AdamOptimizer(lr_1).minimize(cost, var_list=other_opt_vars)
-    op2 = tf.train.AdamOptimizer(lr_2).minimize(cost, var_list=ft_opt_vars)
+    op1 = optimizer(lr_1).minimize(cost, var_list=other_opt_vars)
+    op2 = optimizer(lr_2).minimize(cost, var_list=ft_opt_vars)
     return tf.group(op1, op2)  # ft_optimize is more efficient. siwtch to this once things work
 
 
@@ -66,15 +65,18 @@ def softmax_cost(logits, labels, ratio=None, rebalance=1):
                     logits=logits, labels=labels)))
     else:
         return tf.reduce_mean(
-            tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=labels))
+            tf.nn.sparse_softmax_cross_entropy_with_logits(
+                logits=logits,
+                labels=labels))
 
 
 def find_ckpts(config,dirs=None):
     if dirs is None:
-        dirs = sorted(glob(config.train_checkpoint + config.which_dataset + '*'), reverse=True)[0]  # only the newest model run
+        dirs = sorted(glob(
+        config.train_checkpoint + config.which_dataset + '*'), reverse=True)[0]  # only the newest model run
     ckpts = sorted(glob(dirs + '/*.ckpt*'))
     ckpts = [x for x in glob(os.path.join(dirs, '*.ckpt*')) if 'meta' in x]
     ckpt_num = np.argsort([int(x.split('-')[-1].split('.')[0]) for x in ckpts])
     ckpt_metas = np.asarray(ckpts)[ckpt_num]
-    ckpt_names = [x.split('.meta')[0] for x  in ckpt_metas]
+    ckpt_names = [x.split('.meta')[0] for x in ckpt_metas]
     return np.asarray(ckpt_names), ckpt_metas

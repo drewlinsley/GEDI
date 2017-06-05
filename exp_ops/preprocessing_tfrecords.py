@@ -119,33 +119,10 @@ def int64_feature(values):
     return tf.train.Feature(int64_list=tf.train.Int64List(value=values))
 
 
-def image_to_tfexample(image_data, image_format, height, width, class_id):
-    return tf.train.Example(features=tf.train.Features(feature={
-      'image/encoded': bytes_feature(image_data),
-      'image/format': bytes_feature(image_format),
-      'image/class/label': int64_feature(class_id),
-      'image/height': int64_feature(height),
-      'image/width': int64_feature(width),
-    }))
-
-
-def _add_to_tfrecord(
-        images, labels, tfrecord_writer, im_ext, hw, tf_im_conv, offset=0):
-    num_images = images.shape[0]
-    with tf.Graph().as_default():
-        image_placeholder = tf.placeholder(dtype=tf.uint8)
-        encoded_image = tf_im_conv(image_placeholder)
-        with tf.Session('') as sess:
-            for j in range(num_images):
-                # Have to do below to translate between tf and byte encodigns
-                image = np.squeeze(images[j]).transpose((1, 2, 0))
-                label = labels[j]
-                im_string = sess.run(
-                    encoded_image, feed_dict={image_placeholder: image})
-                example = image_to_tfexample(
-                    im_string, im_ext, hw[0], hw[1], label)
-                tfrecord_writer.write(example.SerializeToString())
-    return offset + num_images
+def floats_feature(values):
+    if not isinstance(values, (tuple, list)):
+        values = [values]
+    return tf.train.Feature(float_list=tf.train.FloatList(value=values))
 
 
 def image_converter(im_ext):
@@ -160,62 +137,48 @@ def image_converter(im_ext):
     return out_fun
 
 
-def process_image_data(
-        im_key, im_dict, output_file, im_ext, train_shards, hw, normalize):
-    print 'Building: %s' % output_file
-    files = im_dict[im_key]
-    all_labels = im_dict[im_key + '_labels']
-    output_pointer = output_file + im_key + '.tfrecords'
-    tf_im_conv = image_converter(im_ext)
-    with tf.python_io.TFRecordWriter(output_pointer) as tfrecord_writer:
-        num_shards = np.round(len(files)/train_shards)
-        batch_idx = np.repeat(np.arange(num_shards), train_shards)
-        print 'Storing data in {} shards. Using {}/{} training images \
-            (adjust shard size to change proportion).'.format(
-                num_shards, len(batch_idx), len(files))
-        batch_idx = np.concatenate((
-            batch_idx, np.ones((len(files) - len(batch_idx))) * -1))
-        for idx in tqdm(range(num_shards)):
-            # load_im_batch also returns a string array of labels
-            images, _ = load_im_batch(files[batch_idx == idx], hw, normalize)
-            labels = all_labels[batch_idx == idx]
-            _add_to_tfrecord(
-                images, labels, tfrecord_writer, im_ext, hw, tf_im_conv)
-
-
 def get_image_ratio(
         f,
         ratio_list,
         timepoints,
         id_column,
-        regex_match):
-    '''Loop through the ratio list until you find the id_column row that matches f'''
+        regex_match
+        ):
+    '''Loop through the ratio list until you find the
+    id_column row that matches f'''
     f_re = re.search(regex_match, f).group()
-    r = ratio_list[ratio_list['plate_well_neuron'].str.contains(f_re)]
-    return [r[str(x)].as_matrix() for x in timepoints]
+    if id_column not in ratio_list.columns:
+        raise RuntimeError('Cannot find your id_column in the dataframe.')
+    r = ratio_list[ratio_list[id_column].str.contains(f_re)]
+    if r.empty:
+        return None
+    else:
+        return [r[str(x)].as_matrix() for x in timepoints]
 
 
 def features_to_dict(
         label,
         image,
         filename,
-        ratio):
+        ratio,
+        ratio_placeholder=-1.):
     if ratio is None:
-        return {
-            'label': label,
-            'image': image,
-            'filename': filename
-        }
-    else:
-        return {
-            'label': label,
-            'image': image,
-            'filename': filename,
-            'ratio': ratio
-        }
+        ratio = ratio_placeholder
+    return {  # Go ahead and store a None ratio if necessary
+        'label': int64_feature(label),
+        'image': bytes_feature(image.tostring()),
+        'filename': bytes_feature(filename.tostring()),
+        'ratio': floats_feature(ratio)
+    }
 
 
-def extract_to_tf_records(files, label_list, ratio_list, output_pointer, config, k):
+def extract_to_tf_records(
+        files,
+        label_list,
+        ratio_list,
+        output_pointer,
+        config,
+        k):
     print 'Building: %s' % config.tfrecord_dir
     max_array = np.zeros(len(files))
     min_array = np.zeros(len(files))
@@ -239,9 +202,9 @@ def extract_to_tf_records(files, label_list, ratio_list, output_pointer, config,
                         config.panel,
                         divide_panel=config.divide_panel,
                         max_value=config.max_gedi,
-                        min_value=config.min_gedi).astype(np.float32)[None, :, :]]
+                        min_value=config.min_gedi).astype(
+                            np.float32)[None, :, :]]
                 image = np.concatenate(image)
-                import ipdb;ipdb.set_trace()
                 l = (r > config.ratio_cutoff).astype(int)
             else:
                 image = produce_patch(

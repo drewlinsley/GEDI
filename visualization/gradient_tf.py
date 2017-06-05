@@ -1,18 +1,15 @@
 import os
-import sys
 import time
 import re
 import tensorflow as tf
 import numpy as np
-import pandas as pd
 from argparse import ArgumentParser
 from exp_ops.data_loader import inputs
-from exp_ops.tf_fun import make_dir, find_ckpts
-from exp_ops.plotting_fun import plot_accuracies, plot_std, plot_cms, plot_pr, plot_cost, plot_hms
+from exp_ops.tf_fun import make_dir
+from exp_ops.plotting_fun import plot_hms
 from gedi_config import GEDIconfig
 from models import GEDI_vgg16_trainable_batchnorm_shared as vgg16
 from tqdm import tqdm
-from matplotlib import pyplot as plt
 
 
 def hm_normalize(x):
@@ -28,17 +25,19 @@ def loop_plot(ims, hms, label, pointer, blur=0, mi=100):
     print 'Saved images to %s' % pointer
 
 
-def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
+def test_vgg16(validation_data, model_dir, which_set, selected_ckpts):
     config = GEDIconfig()
     blur_kernel = config.hm_blur
     if validation_data is None:  # Use globals
-        validation_data = config.tfrecord_dir + 'val.tfrecords'
+        validation_data = os.path.join(
+            config.tfrecord_dir,
+            config.tf_record_names[which_set])
         meta_data = np.load(
             os.path.join(
-                config.tfrecord_dir, 'val_' +
-                config.max_file))
+                config.tfrecord_dir, 'val_%s' % config.max_file))
     else:
-        meta_data = np.load(validation_data.split('.tfrecords')[0] + '_maximum_value.npz')
+        meta_data = np.load(
+            '%s_maximum_value.npz' % validation_data.split('.tfrecords')[0])
     label_list = os.path.join(
         config.processed_image_patch_dir, 'list_of_' + '_'.join(
             x for x in config.image_prefixes) + '_labels.txt')
@@ -55,10 +54,8 @@ def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
     except:
         min_value = np.asarray([config.min_gedi])
 
-
     # Find model checkpoints
-    ckpts, ckpt_names = find_ckpts(config, model_dir)
-    ds_dt_stamp = re.split('/', ckpts[0])[-2]
+    ds_dt_stamp = re.split('/', model_dir)[-1]
     out_dir = os.path.join(config.results, ds_dt_stamp + '/')
     try:
         config = np.load(os.path.join(out_dir, 'meta_info.npy')).item()
@@ -71,7 +68,6 @@ def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
         print '-'*60
         print 'Using config from gedi_config.py for model:%s' % out_dir
         print '-'*60
-
 
     # Make output directories if they do not exist
     im_shape = config.gedi_image_size
@@ -110,18 +106,14 @@ def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
 
     # Set up saver
     saver = tf.train.Saver(tf.global_variables())
-
-    if selected_ckpts is not None:
-        # Select a specific ckpt
-        ckpts = [ckpts[selected_ckpts]]
-    else:
-        ckpts = ckpts[-1]
+    ckpts = [selected_ckpts]
 
     # Loop through each checkpoint then test the entire validation set
     print '-'*60
     print 'Beginning evaluation on ckpt: %s' % ckpts
     print '-'*60
-    yhat, y, tn_hms, tp_hms, fn_hms, fp_hms, tn_ims, tp_ims, fn_ims, fp_ims = [], [], [], [], [], [], [], [], [], []
+    yhat, y, tn_hms, tp_hms, fn_hms, fp_hms = [], [], [], [], [], []
+    tn_ims, tp_ims, fn_ims, fp_ims = [], [], [], []
     for idx, c in tqdm(enumerate(ckpts), desc='Running checkpoints'):
         try:
             # Initialize the graph
@@ -137,7 +129,11 @@ def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
             saver.restore(sess, c)
             start_time = time.time()
             while not coord.should_stop():
-                tyh, ty, thm, tim = sess.run([preds, targets, heatmap_op, val_images])
+                tyh, ty, thm, tim = sess.run([
+                    preds,
+                    targets,
+                    heatmap_op,
+                    val_images])
                 tyh = tyh[0]
                 ty = ty[0]
                 tim = (tim / tim.max()).squeeze()
@@ -163,16 +159,36 @@ def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
         coord.join(threads)
         sess.close()
 
-    # Plot images
-    dir_pointer = os.path.join(config.heatmap_source_images, ds_dt_stamp) 
+    # Plot images -- add to a dict and incorporate file_pointers
+    dir_pointer = os.path.join(config.heatmap_source_images, ds_dt_stamp)
     stem_dirs = ['tn', 'tp', 'fn', 'fp']
     dir_list = [dir_pointer]
     dir_list += [os.path.join(dir_pointer, x) for x in stem_dirs]
     [make_dir(d) for d in dir_list]
-    loop_plot(tn_ims, tn_hms, 'True negative', os.path.join(dir_pointer, 'tn'), blur=blur_kernel)
-    loop_plot(tp_ims, tp_hms, 'True positive', os.path.join(dir_pointer, 'tp'), blur=blur_kernel)
-    loop_plot(fn_ims, fn_hms, 'False negative', os.path.join(dir_pointer, 'fn'), blur=blur_kernel)
-    loop_plot(fp_ims, fp_hms, 'False positive', os.path.join(dir_pointer, 'fp'), blur=blur_kernel)
+    loop_plot(
+        tn_ims,
+        tn_hms,
+        'True negative',
+        os.path.join(dir_pointer, 'tn'),
+        blur=blur_kernel)
+    loop_plot(
+        tp_ims,
+        tp_hms,
+        'True positive',
+        os.path.join(dir_pointer, 'tp'),
+        blur=blur_kernel)
+    loop_plot(
+        fn_ims,
+        fn_hms,
+        'False negative',
+        os.path.join(dir_pointer, 'fn'),
+        blur=blur_kernel)
+    loop_plot(
+        fp_ims,
+        fp_hms,
+        'False positive',
+        os.path.join(dir_pointer, 'fp'),
+        blur=blur_kernel)
 
 
 if __name__ == '__main__':
@@ -184,7 +200,16 @@ if __name__ == '__main__':
         "--model_dir", type=str, dest="model_dir",
         default=None, help="Feed in a specific model for validation.")
     parser.add_argument(
-        "--selected_ckpts", type=int, dest="selected_ckpts",
-        default=None, help="Which checkpoint?")
+        "--selected_ckpts",
+        type=str,
+        dest="selected_ckpts",
+        default=None,
+        help="Name of checkpoint file?")
+    parser.add_argument(
+        "--which_set",
+        type=str,
+        dest="which_set",
+        default='val',
+        help="Which set (e.g. 'val', 'test', or 'train')?")
     args = parser.parse_args()
     test_vgg16(**vars(args))

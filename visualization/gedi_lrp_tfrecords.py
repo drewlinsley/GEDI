@@ -20,7 +20,7 @@ from sklearn.preprocessing import OneHotEncoder as oe
 def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
     config = GEDIconfig()
     if validation_data is None:  # Use globals
-        validation_data = config.tfrecord_dir + 'val.tfrecords'
+        validation_data = config.tf_record_names['val']
         meta_data = np.load(
             os.path.join(
                 config.tfrecord_dir, 'val_' +

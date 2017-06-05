@@ -1,5 +1,4 @@
 import os
-import sys
 import time
 import re
 import tensorflow as tf
@@ -13,6 +12,7 @@ from gedi_config import GEDIconfig
 from models import GEDI_vgg16_trainable_batchnorm_shared as vgg16
 from tqdm import tqdm
 
+
 def randomization_test(y, yhat, iterations=10000):
     true_score = np.mean(y == yhat)
     perm_scores = np.zeros((iterations))
@@ -25,16 +25,18 @@ def randomization_test(y, yhat, iterations=10000):
 
 
 # Evaluate your trained model on GEDI images
-def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
+def test_vgg16(validation_data, model_dir, which_set, selected_ckpts=-1):
     config = GEDIconfig()
     if validation_data is None:  # Use globals
-        validation_data = config.tfrecord_dir + 'val.tfrecords'
+        validation_data = os.path.join(
+            config.tfrecord_dir,
+            config.tf_record_names[which_set])
         meta_data = np.load(
             os.path.join(
-                config.tfrecord_dir, 'val_' +
-                config.max_file))
+                config.tfrecord_dir, 'val_%s' % config.max_file))
     else:
-        meta_data = np.load(validation_data.split('.tfrecords')[0] + '_maximum_value.npz')
+        meta_data = np.load(
+            '%s_maximum_value.npz' % validation_data.split('.tfrecords')[0])
     label_list = os.path.join(
         config.processed_image_patch_dir, 'list_of_' + '_'.join(
             x for x in config.image_prefixes) + '_labels.txt')
@@ -51,11 +53,10 @@ def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
     except:
         min_value = np.asarray([config.min_gedi])
 
-
     # Find model checkpoints
     ckpts, ckpt_names = find_ckpts(config, model_dir)
     ds_dt_stamp = re.split('/', ckpts[0])[-2]
-    out_dir = os.path.join(config.results, ds_dt_stamp + '/')
+    out_dir = os.path.join(config.results, ds_dt_stamp)
     try:
         config = np.load(os.path.join(out_dir, 'meta_info.npy')).item()
         # Make sure this is always at 1
@@ -67,7 +68,6 @@ def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
         print '-'*60
         print 'Using config from gedi_config.py for model:%s' % out_dir
         print '-'*60
-
 
     # Make output directories if they do not exist
     dir_list = [config.results, out_dir]
@@ -201,13 +201,28 @@ def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument(
-        "--validation_data", type=str, dest="validation_data",
-        default=None, help="Validation data tfrecords bin file.")
+        "--validation_data",
+        type=str,
+        dest="validation_data",
+        default=None,
+        help="Validation data tfrecords bin file.")
     parser.add_argument(
-        "--model_dir", type=str, dest="model_dir",
-        default=None, help="Feed in a specific model for validation.")
+        "--model_dir",
+        type=str,
+        dest="model_dir",
+        default=None,
+        help="Feed in a specific model for validation.")
     parser.add_argument(
-        "--selected_ckpts", type=int, dest="selected_ckpts",
-        default=None, help="Which checkpoint?")
+        "--selected_ckpts",
+        type=int,
+        dest="selected_ckpts",
+        default=None,
+        help="Which checkpoint?")
+    parser.add_argument(
+        "--which_set",
+        type=str,
+        dest="which_set",
+        default='val',
+        help="Which set (e.g. 'val', 'test', or 'train')?")
     args = parser.parse_args()
     test_vgg16(**vars(args))

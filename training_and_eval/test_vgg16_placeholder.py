@@ -1,21 +1,49 @@
 import os
-import sys
 import time
 import re
 import tensorflow as tf
 import numpy as np
 import pandas as pd
 from argparse import ArgumentParser
-from exp_ops.data_loader import inputs
+from glob import glob
 from exp_ops.tf_fun import make_dir, find_ckpts
-from exp_ops.plotting_fun import plot_accuracies, plot_std, plot_cms, plot_pr, plot_cost
+from exp_ops.plotting_fun import plot_accuracies, plot_std, plot_cms, plot_pr,\
+    plot_cost
+from exp_ops.preprocessing_GEDI_images import produce_patch
 from gedi_config import GEDIconfig
 from models import GEDI_vgg16_trainable_batchnorm_shared as vgg16
 from tqdm import tqdm
-from sklearn.pipeline import make_pipeline
-from sklearn.svm import LinearSVC
-from sklearn import preprocessing
-from sklearn.model_selection import cross_val_score
+
+
+def crop_center(img, crop_size):
+    x, y = img.shape
+    cx, cy = crop_size
+    startx = x//2-(cx//2)
+    starty = y//2-(cy//2)
+    return img[starty:starty+cy, startx:startx+cx]
+
+
+def image_batcher(
+        start,
+        images,
+        labels,
+        config):
+    if start + config.validation_batch > len(images):
+        return
+    next_image_batch = images[start:start + config.validation_batch]
+    next_label_batch = labels[start:start + config.validation_batch]
+    image_stack = np.concatenate(
+        [crop_center(
+            produce_patch(
+                f,
+                config.channel,
+                config.panel,
+                divide_panel=config.divide_panel,
+                max_value=config.max_gedi,
+                min_value=config.min_gedi).astype(
+                    np.float32),
+            config.config.model_image_size[:2]) for f in next_image_batch])
+    yield image_stack, next_label_batch
 
 
 def randomization_test(y, yhat, iterations=10000):
@@ -25,45 +53,33 @@ def randomization_test(y, yhat, iterations=10000):
     for it in range(iterations):
         perm_scores[it] = np.mean(
             yhat == np.copy(y)[np.random.permutation(lab_len)])
-    p_value = (np.sum(
-        true_score < perm_scores).astype(float) + 1.) / float(iterations + 1)
+    p_value = (np.sum(true_score < perm_scores) + 1) / float(iterations + 1)
     return p_value
 
 
 # Evaluate your trained model on GEDI images
-def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
+def test_vgg16(live_data, dead_data, model_dir, selected_ckpts=None):
     config = GEDIconfig()
-    if validation_data is None:  # Use globals
-        validation_data = os.path.join(
-            config.tfrecord_dir,
-            config.tf_record_names['val'])
-        meta_data = np.load(
-            os.path.join(
-                config.tfrecord_dir, 'val_%s' % config.max_file))
-    else:
-        meta_data = np.load(
-            validation_data.split('.tfrecords')[0] + '_maximum_value.npz')
-    label_list = os.path.join(
-        config.processed_image_patch_dir,
-        'list_of_' + '_'.join(
-            x for x in config.image_prefixes) + '_labels.txt')
-    with open(label_list) as f:
-        file_pointers = [l.rstrip('\n') for l in f.readlines()]
 
-    # Prepare image normalization values
-    try:
-        max_value = np.max(meta_data['max_array']).astype(np.float32)
-    except:
-        max_value = np.asarray([config.max_gedi])
-    try:
-        min_value = np.max(meta_data['min_array']).astype(np.float32)
-    except:
-        min_value = np.asarray([config.min_gedi])
+    if live_data is None:
+        raise RuntimeError(
+            'You need to supply a directory path to the validation_data.')
+    if dead_data is None:
+        print 'No dead file path detected. Running \'blinded\' analysis.'
+    if selected_ckpts is None:
+        raise RuntimeError(
+            'Supply the name of your ckpt file.')
+
+    live_files = glob(os.path.join(live_data, '*%s' % config.raw_im_ext))
+    dead_files = glob(os.path.join(dead_data, '*%s' % config.raw_im_ext))
+    combined_files = np.asarray(live_files + dead_files)
+    combined_labels = np.concatenate(
+        np.zeros((len(live_files)), np.ones(dead_files)))
 
     # Find model checkpoints
     ckpts, ckpt_names = find_ckpts(config, model_dir)
     ds_dt_stamp = re.split('/', ckpts[0])[-2]
-    out_dir = os.path.join(config.results, ds_dt_stamp)
+    out_dir = os.path.join(config.results, ds_dt_stamp + '/')
     try:
         config = np.load(os.path.join(out_dir, 'meta_info.npy')).item()
         # Make sure this is always at 1
@@ -79,20 +95,16 @@ def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
     # Make output directories if they do not exist
     dir_list = [config.results, out_dir]
     [make_dir(d) for d in dir_list]
-    # im_shape = get_image_size(config)
-    im_shape = config.gedi_image_size
 
     # Prepare data on CPU
-    with tf.device('/cpu:0'):
-            val_images, val_labels = inputs(
-                validation_data,
-                1,
-                im_shape,
-                config.model_image_size[:2],
-                max_value=max_value,
-                min_value=min_value,
-                num_epochs=1,
-                normalize=config.normalize)
+    images = tf.placeholder(
+        tf.float32,
+        shape=[None] + config.model_image_size[:2],
+        name='images')
+    labels = tf.placeholder(
+        tf.int64,
+        shape=None,
+        name='images')
 
     # Prepare model on GPU
     with tf.device('/gpu:0'):
@@ -101,28 +113,31 @@ def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
                 vgg16_npy_path=config.vgg16_weight_path,
                 fine_tune_layers=config.fine_tune_layers)
             vgg.build(
-                val_images, output_shape=config.output_shape)
+                images, output_shape=config.output_shape)
 
         # Setup validation op
-        scores = vgg.fc7
+        scores = vgg.prob
         preds = tf.argmax(vgg.prob, 1)
-        targets = tf.cast(val_labels, dtype=tf.int64)
+        targets = tf.cast(labels, dtype=tf.int64)
 
     # Set up saver
     saver = tf.train.Saver(tf.global_variables())
 
-    if selected_ckpts is not None:
-        # Select a specific ckpt
-        ckpts = [ckpts[selected_ckpts]]
-    else:
-        ckpts = ckpts[-1]
-
     # Loop through each checkpoint then test the entire validation set
+    ckpt_yhat, ckpt_y, ckpt_scores = [], [], []
     print '-'*60
     print 'Beginning evaluation'
     print '-'*60
-    dec_scores, yhat, y = [], [], []
+
+    if selected_ckpts is not None:
+        # Select a specific ckpt
+        if selected_ckpts < 0:
+            ckpts = ckpts[selected_ckpts:]
+        else:
+            ckpts = ckpts[:selected_ckpts]
+
     for idx, c in tqdm(enumerate(ckpts), desc='Running checkpoints'):
+        dec_scores, yhat, y = [], [], []
         try:
             # Initialize the graph
             sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
@@ -136,12 +151,27 @@ def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
             threads = tf.train.start_queue_runners(sess=sess, coord=coord)
             saver.restore(sess, c)
             start_time = time.time()
-            while not coord.should_stop():
-                sc, tyh, ty = sess.run([scores, preds, targets])
-                dec_scores += [sc]
-                yhat += [tyh]
-                y += [ty]
+            for image_batch, label_batch in image_batcher(
+                    start=0,
+                    images=combined_files,
+                    labels=combined_labels,
+                    config=config):
+                feed_dict = {
+                    images: image_batch,
+                    labels: label_batch,
+                }
+                sc, tyh, ty = sess.run(
+                    [scores, preds, targets],
+                    feed_dict=feed_dict)
+                dec_scores = np.append(dec_scores, sc)
+                yhat = np.append(yhat, tyh)
+                y = np.append(y, ty)
         except tf.errors.OutOfRangeError:
+            ckpt_yhat.append(yhat)
+            ckpt_y.append(y)
+            ckpt_scores.append(dec_scores)
+            print 'Iteration accuracy: %s' % np.mean(yhat == y)
+            print 'Iteration pvalue: %.5f' % randomization_test(y=y, yhat=yhat)
             print 'Batch %d took %.1f seconds' % (
                 idx, time.time() - start_time)
         finally:
@@ -149,30 +179,20 @@ def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
         coord.join(threads)
         sess.close()
 
-    # Save data
-    dec_scores = np.concatenate(dec_scores)
-    y = np.concatenate(y)
-    yhat = np.concatenate(yhat)
-    
-    # Run SVM
-    #  class_weight = {k: v for k, v in  zip(np.unique(y), meta_data['ratio'][::-1])}
-    class_weight = {np.argmax(meta_data['ratio']): meta_data['ratio'].max() / meta_data['ratio'].min()} 
-    svm = LinearSVC(C=1e-3, dual=False)  # , class_weight=class_weight) 
-    clf = make_pipeline(preprocessing.StandardScaler(), svm)
-    cv_performance = cross_val_score(clf, dec_scores, y, cv=5)
+    # Save everything
     np.savez(
-        os.path.join(out_dir, 'svm_data'),
-        yhat=yhat,
-        y=y,
-        scores=dec_scores,
-        ckpts=ckpts,
-        cv_performance=cv_performance)
-    p_value = randomization_test(y=y, yhat=yhat)
-    print 'SVM performance: %s%%, p = %.5f' % (cv_performance * 100, p_value) 
+        os.path.join(out_dir, 'validation_accuracies'),
+        ckpt_yhat=ckpt_yhat,
+        ckpt_y=ckpt_y,
+        ckpt_scores=ckpt_scores,
+        ckpt_names=ckpt_names,
+        live_files=live_files,
+        dead_files=dead_files,
+        )
 
     # Also save a csv with item/guess pairs
     try:
-        trimmed_files = [re.split('/', x)[-1] for x in file_pointers]
+        trimmed_files = [re.split('/', x)[-1] for x in combined_files]
         trimmed_files = np.asarray(trimmed_files)
         dec_scores = np.asarray(dec_scores)
         yhat = np.asarray(yhat)
@@ -215,13 +235,22 @@ def test_vgg16(validation_data, model_dir, selected_ckpts=-1):
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument(
-        "--validation_data", type=str, dest="validation_data",
-        default=None, help="Validation data tfrecords bin file.")
+        "--live_data",
+        type=str,
+        dest="live_data",
+        default=None,
+        help="Folder containing your live images.")
     parser.add_argument(
-        "--model_dir", type=str, dest="model_dir",
-        default=None, help="Feed in a specific model for validation.")
+        "--dead_data",
+        type=str,
+        dest="dead_data",
+        default=None,
+        help="Folder containing your dead images.")
     parser.add_argument(
-        "--selected_ckpts", type=int, dest="selected_ckpts",
-        default=None, help="Which checkpoint?")
+        "--selected_ckpts",
+        type=str,
+        dest="selected_ckpts",
+        default=None,
+        help="Which checkpoint?")
     args = parser.parse_args()
     test_vgg16(**vars(args))

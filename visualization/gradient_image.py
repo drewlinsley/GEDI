@@ -13,6 +13,7 @@ from ops import utils
 from scipy.ndimage.interpolation import zoom
 from scipy.ndimage.filters import gaussian_filter, convolve
 
+
 def gauss_filter(size, sigma, ndims=1):
     # make sure size is odd
     x = int(size)

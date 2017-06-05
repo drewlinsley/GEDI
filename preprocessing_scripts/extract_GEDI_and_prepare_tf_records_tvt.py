@@ -38,10 +38,10 @@ def write_labels(flag, im_lists, config):
 
 def read_csv(x):
     with open(x, 'rb') as csvfile:
-        reader = [x for x in csv.reader(csvfile, delimiter='\n')]
+        reader = [ix for ix in csv.reader(csvfile, delimiter='\n')]
     columns = reader[0][0].split(',')
     columns[0] = 'id'
-    columns = [x.strip('"') for x in columns]
+    columns = [ix.strip('"') for ix in columns]
     data = []
     for r in range(1, len(reader)):
         data += [[c.strip('"') for c in reader[r][0].split(',')]]
@@ -65,7 +65,9 @@ def extract_tf_records_from_GEDI_tiffs():
                 config.home_dir,
                 config.original_image_dir,
                 config.ratio_stem,
-                '%s%s.csv' % (config.ratio_prefix, config.experiment_image_set))) 
+                '%s%s.csv' % (
+                    config.ratio_prefix,
+                    config.experiment_image_set)))
     else:
         ratio_list = None
 
@@ -111,7 +113,7 @@ def extract_tf_records_from_GEDI_tiffs():
             files = im_lists[k]
             label_list = im_labels[k]
             output_pointer = os.path.join(
-                config.tfrecord_dir, k + '.tfrecords')
+                config.tfrecord_dir, config.tf_record_names[k])
             extract_to_tf_records(
                 files=files,
                 label_list=label_list,
