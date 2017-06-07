@@ -79,7 +79,6 @@ def train_vgg16(train_dir=None, validation_dir=None):
     assert os.path.exists(train_data)
     assert os.path.exists(validation_data)
     assert os.path.exists(config.vgg16_weight_path)
-    assert os.path.exists()
     with tf.device('/cpu:0'):
         train_images, train_labels = inputs(
             train_data,

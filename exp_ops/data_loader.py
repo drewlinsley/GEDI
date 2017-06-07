@@ -185,17 +185,21 @@ def read_and_decode(
     # image.set_shape(im_size)
 
     # Set max_value
-    if max_value is None:
-        max_value = tf.reduce_max(image, keep_dims=True)
-    else:
-        max_value = max_value[None, None, None]
-    if not isinstance(max_value, tf.Tensor):
-        # If we have max and min numpys, normalize to global [0, 1]
-        min_value = min_value[None, None, None]
-        image = (image - min_value) / (max_value - min_value)
-    else:
-        # Normalize to the max_value
-        image /= max_value
+    # if max_value is None:
+    #     max_value = tf.reduce_max(image, keep_dims=True)
+    # else:
+    #     if not isinstance(max_value, np.ndarray):
+    #         max_value = np.asarray(max_value)
+    #     max_value = max_value[None, None, None]
+    # if not isinstance(max_value, tf.Tensor):
+    #     # If we have max and min numpys, normalize to global [0, 1]
+    #     if not isinstance(min_value, np.ndarray):
+    #         min_value = np.asarray(min_value)
+    #     min_value = min_value[None, None, None]
+    #     image = (image - min_value) / (max_value - min_value)
+    # else:
+    #     # Normalize to the max_value
+    #     image /= max_value
 
     if normalize:  # If we want to ensure all images are [0, 1]
         image /= tf.reduce_max(image, keep_dims=True)

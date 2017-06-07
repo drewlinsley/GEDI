@@ -167,7 +167,7 @@ def features_to_dict(
     return {  # Go ahead and store a None ratio if necessary
         'label': int64_feature(label),
         'image': bytes_feature(image.tostring()),
-        'filename': bytes_feature(filename.tostring()),
+        'filename': bytes_feature(filename),
         'ratio': floats_feature(ratio)
     }
 
