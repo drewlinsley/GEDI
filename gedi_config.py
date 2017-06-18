@@ -82,8 +82,8 @@ class GEDIconfig(object):  # at some point use pjoin throughout
         elif self.which_dataset == 'ratio':
             self.panel = 2
             self.divide_panel = 0
-        self.max_gedi = 16117.  # Max value of imaging equiptment (Must be float!). If this is None, scripts will use empirical values.
-        self.min_gedi = 0.  # 0  # Min value of imaging equiptment (Must be float!).
+        self.max_gedi = None  # 16117.  # Max value of imaging equiptment (Must be float!). If this is None, scripts will use empirical values.
+        self.min_gedi = None  # 0.  # 0  # Min value of imaging equiptment (Must be float!).
 
         # Paths for creating tfrecords.
         self.GEDI_path = pjoin(self.home_dir, self.project_stem)
@@ -151,9 +151,9 @@ class GEDIconfig(object):  # at some point use pjoin throughout
             'fc8'
         ]
         self.batchnorm_layers = ['fc6', 'fc7', 'fc8']
-        self.optimizer = 'sgd'  # 'adam'
+        self.optimizer = 'adam'
         self.hold_lr = 1e-8
-        self.new_lr = 3e-4
+        self.new_lr = 1e-3
         # choose from: left_right, up_down, random_crop, random_brightness,
         # random_contrast, rotate
         self.data_augmentations = [

@@ -3,6 +3,12 @@
 ## Your first step should be to run the setup script. (Use `sudo` if you must).
 ```python setup.py install```
 
+## Next, download the following model ``weight'' files from the below links
+1. https://mega.nz/#!YU1FWJrA!O1ywiCS2IiOlUCtCpI6HTJOMrneN-Qdv3ywQP5poecM
+   * These are your ImageNet pretrained VGG16 weights. In the config, these are pointed to with `self.vgg16_weight_path`.
+2. https://mega.nz/#F!tbQkzLqS!xLhX6lhyriRHIR7i72fJ3Q
+   * These are the weight files for a CNN trained to discriminate between live/dead cells (with GEDI ground-truth). 
+
 ## If you're using this project you will want to do one of four things (advanced operations, like ratio and time-course prediction will be added below):
 1. Convert data into a CNN-friendly format.
 2. Train a model.
@@ -42,11 +48,14 @@ After preparing data in a CNN-friendly format, you want to train a model. Look i
 ## Run `sh train_models.sh X` where X is the GPU you wish to run training on. 
 
 ## 3. Test data on a model.
-* Option A: Test a model on any dataset (assuming similar charactaristics of both, e.g. both are Rat neurons). (model_dir is your model, validation_data is the tf-records file you want to test on.)
+* Option A: Pass your tiff images through a pretrained model. Put all of your images in one folder ('image_folder' in the command below) and all of your model checkpoint files that you downloaded above (the second mega.nz link above) in a seperate folder ('model_dir' in the command below).
+```python training_and_eval --image_folder=/home/to/my_images_for_cnn --model_dir=/path/to/GEDI_trained_model```
+
+* Option B: Test a model on any dataset (assuming similar charactaristics of both, e.g. both are Rat neurons). (model_dir is your model, validation_data is the tf-records file you want to test on.)
 
 ```python training_and_eval/test_vgg16.py --model_dir=/media/data/GEDI/drew_images/project_files/train_checkpoint/gfp_2017_05_27_13_56_55 --validation_data=/media/data/GEDI/drew_images/project_files/tfrecords/all_rh_analysis_rat_gfp/val.tfrecords --selected_ckpts=32```
 
-* Option B: Train an SVM on a model to optimize the transfer of its predictions to a new dataset, e.g. trained on rat and tested on human.
+* Option C: Train an SVM on a model to optimize the transfer of its predictions to a new dataset, e.g. trained on rat and tested on human.
 
 ```python training_and_eval/test_vgg16_tf_svm.py --model_dir=/media/data/GEDI/drew_images/project_files/train_checkpoint/gfp_2017_05_27_13_56_55 --validation_data=/media/data/GEDI/drew_images/project_files/tfrecords/all_rh_analysis_rat_gfp/test.tfrecords --selected_ckpts=32```
 

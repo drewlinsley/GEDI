@@ -184,7 +184,7 @@ def read_and_decode(
         image = tf.transpose(res_image, [2, 1, 0])
     # image.set_shape(im_size)
 
-    # Set max_value
+    # Set max_value -- From new REPO but not working...
     # if max_value is None:
     #     max_value = tf.reduce_max(image, keep_dims=True)
     # else:
@@ -200,6 +200,19 @@ def read_and_decode(
     # else:
     #     # Normalize to the max_value
     #     image /= max_value
+
+    # Set max_value -- From old REPO. testing now 6/17/17.
+    if max_value is None:
+        max_value = tf.reduce_max(image, keep_dims=True)
+    else:
+        max_value = max_value[None, None, None]
+    if not isinstance(max_value, tf.Tensor):
+        # If we have max and min numpys, normalize to global [0, 1]
+        min_value = min_value[None, None, None]
+        image = (image - min_value) / (max_value - min_value)
+    else:
+        # Normalize to the max_value
+        image /= max_value
 
     if normalize:  # If we want to ensure all images are [0, 1]
         image /= tf.reduce_max(image, keep_dims=True)

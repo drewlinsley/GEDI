@@ -26,12 +26,10 @@ def crop_center(img, crop_size):
 def image_batcher(
         start,
         images,
-        labels,
         config):
     if start + config.validation_batch > len(images):
         return
     next_image_batch = images[start:start + config.validation_batch]
-    next_label_batch = labels[start:start + config.validation_batch]
     image_stack = np.concatenate(
         [crop_center(
             produce_patch(
@@ -43,7 +41,7 @@ def image_batcher(
                 min_value=config.min_gedi).astype(
                     np.float32),
             config.config.model_image_size[:2]) for f in next_image_batch])
-    yield image_stack, next_label_batch
+    yield image_stack
 
 
 def randomization_test(y, yhat, iterations=10000):
@@ -58,28 +56,19 @@ def randomization_test(y, yhat, iterations=10000):
 
 
 # Evaluate your trained model on GEDI images
-def test_vgg16(live_data, dead_data, model_dir, selected_ckpts=None):
+def test_vgg16(image_dir, model_dir):
     config = GEDIconfig()
 
-    if live_data is None:
+    if image_dir is None:
         raise RuntimeError(
-            'You need to supply a directory path to the validation_data.')
-    if dead_data is None:
-        print 'No dead file path detected. Running \'blinded\' analysis.'
-    if selected_ckpts is None:
-        raise RuntimeError(
-            'Supply the name of your ckpt file.')
+            'You need to supply a directory path to the images.')
 
-    live_files = glob(os.path.join(live_data, '*%s' % config.raw_im_ext))
-    dead_files = glob(os.path.join(dead_data, '*%s' % config.raw_im_ext))
-    combined_files = np.asarray(live_files + dead_files)
-    combined_labels = np.concatenate(
-        np.zeros((len(live_files)), np.ones(dead_files)))
+    combined_files = np.asarray(glob(os.path.join(image_dir, '*%s' % config.raw_im_ext)))
 
     # Find model checkpoints
     ckpts, ckpt_names = find_ckpts(config, model_dir)
     ds_dt_stamp = re.split('/', ckpts[0])[-2]
-    out_dir = os.path.join(config.results, ds_dt_stamp + '/')
+    out_dir = os.path.join(config.results, ds_dt_stamp)
     try:
         config = np.load(os.path.join(out_dir, 'meta_info.npy')).item()
         # Make sure this is always at 1
@@ -101,10 +90,6 @@ def test_vgg16(live_data, dead_data, model_dir, selected_ckpts=None):
         tf.float32,
         shape=[None] + config.model_image_size[:2],
         name='images')
-    labels = tf.placeholder(
-        tf.int64,
-        shape=None,
-        name='images')
 
     # Prepare model on GPU
     with tf.device('/gpu:0'):
@@ -118,7 +103,6 @@ def test_vgg16(live_data, dead_data, model_dir, selected_ckpts=None):
         # Setup validation op
         scores = vgg.prob
         preds = tf.argmax(vgg.prob, 1)
-        targets = tf.cast(labels, dtype=tf.int64)
 
     # Set up saver
     saver = tf.train.Saver(tf.global_variables())
@@ -154,11 +138,9 @@ def test_vgg16(live_data, dead_data, model_dir, selected_ckpts=None):
             for image_batch, label_batch in image_batcher(
                     start=0,
                     images=combined_files,
-                    labels=combined_labels,
                     config=config):
                 feed_dict = {
-                    images: image_batch,
-                    labels: label_batch,
+                    images: image_batch
                 }
                 sc, tyh, ty = sess.run(
                     [scores, preds, targets],
@@ -235,22 +217,16 @@ def test_vgg16(live_data, dead_data, model_dir, selected_ckpts=None):
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument(
-        "--live_data",
+        "--image_folder",
         type=str,
-        dest="live_data",
+        dest="image_folder",
         default=None,
-        help="Folder containing your live images.")
+        help="Folder containing your .tiff images.")
     parser.add_argument(
-        "--dead_data",
+        "--model_dir",
         type=str,
-        dest="dead_data",
+        dest="model_dir",
         default=None,
-        help="Folder containing your dead images.")
-    parser.add_argument(
-        "--selected_ckpts",
-        type=str,
-        dest="selected_ckpts",
-        default=None,
-        help="Which checkpoint?")
+        help="Folder containing your trained CNN's checkpoint files.")
     args = parser.parse_args()
     test_vgg16(**vars(args))
