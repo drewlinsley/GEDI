@@ -41,10 +41,9 @@ def image_batcher(
                     f,
                     config.channel,
                     config.panel,
-                    divide_panel=config.divide_panel,
+                    divide_panel=config.divide_panel),
                 config.model_image_size[:2])
-                ) for f in next_image_batch]
-        import ipdb;ipdb.set_trace()
+            ) for f in next_image_batch]
         # Add dimensions and concatenate
         yield np.concatenate(
             [x[None, :, :, None] for x in image_stack], axis=0).repeat(
