@@ -23,22 +23,28 @@ def crop_center(img, crop_size):
     return img[starty:starty+cy, startx:startx+cx]
 
 
+def renormalize(img, max_value, min_value):
+    return (img - min_value) / (max_value - min_value)
+
+
 def image_batcher(
         start,
+        num_batches,
         images,
         config):
-    for b in range(config.validation_batch):
+    for b in range(num_batches):
+        print start, len(images)
         next_image_batch = images[start:start + config.validation_batch]
-        image_stack = [crop_center(
+        image_stack = [renormalize(
+            crop_center(
                 produce_patch(
                     f,
                     config.channel,
                     config.panel,
                     divide_panel=config.divide_panel,
-                    max_value=config.max_gedi,
-                    min_value=config.min_gedi).astype(
-                        np.float32),
-                config.model_image_size[:2]) for f in next_image_batch]
+                config.model_image_size[:2])
+                ) for f in next_image_batch]
+        import ipdb;ipdb.set_trace()
         # Add dimensions and concatenate
         yield np.concatenate(
             [x[None, :, :, None] for x in image_stack], axis=0).repeat(
@@ -80,6 +86,8 @@ def test_vgg16(image_dir, model_file):
         print '-'*60
         print 'Using config from gedi_config.py for model:%s' % out_dir
         print '-'*60
+        max_value = np.asarray(config.max_gedi).astype(np.float32)
+        min_value = np.asarray(config.min_gedi).astype(np.float32)
 
     # Make output directories if they do not exist
     dir_list = [config.results, out_dir]
@@ -116,44 +124,39 @@ def test_vgg16(image_dir, model_file):
 
     for idx, c in tqdm(enumerate(ckpts), desc='Running checkpoints'):
         dec_scores, yhat, file_array = [], [], []
-        try:
-            # Initialize the graph
-            sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
-            sess.run(
-                tf.group(
-                    tf.global_variables_initializer(),
-                    tf.local_variables_initializer()))
+        # Initialize the graph
+        sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
+        sess.run(
+            tf.group(
+                tf.global_variables_initializer(),
+                tf.local_variables_initializer()))
 
-            # Set up exemplar threading
-            coord = tf.train.Coordinator()
-            threads = tf.train.start_queue_runners(sess=sess, coord=coord)
-            saver.restore(sess, c)
-            start_time = time.time()
-            for image_batch, file_batch in tqdm(
-                    image_batcher(
-                        start=0,
-                        images=combined_files,
-                        config=config),
-                    total=len(combined_files) // config.validation_batch):
-                feed_dict = {
-                    images: image_batch
-                }
-                sc, tyh = sess.run(
-                    [scores, preds],
-                    feed_dict=feed_dict)
-                dec_scores = np.append(dec_scores, sc)
-                yhat = np.append(yhat, tyh)
-                file_array = np.append(file_array, file_batch)
-        except tf.errors.OutOfRangeError:
-            ckpt_yhat.append(yhat)
-            ckpt_scores.append(dec_scores)
-            ckpt_file_array.append(file_array)
-            print 'Batch %d took %.1f seconds' % (
-                idx, time.time() - start_time)
-        finally:
-            coord.request_stop()
-        coord.join(threads)
-        sess.close()
+        # Set up exemplar threading
+        saver.restore(sess, c)
+        start_time = time.time()
+        num_batches = len(combined_files) // config.validation_batch
+        for image_batch, file_batch in tqdm(
+                image_batcher(
+                    start=0,
+                    num_batches=num_batches,
+                    images=combined_files,
+                    config=config),
+                total=num_batches):
+            feed_dict = {
+                images: image_batch
+            }
+            sc, tyh = sess.run(
+                [scores, preds],
+                feed_dict=feed_dict)
+            dec_scores = np.append(dec_scores, sc)
+            yhat = np.append(yhat, tyh)
+            file_array = np.append(file_array, file_batch)
+        ckpt_yhat.append(yhat)
+        ckpt_scores.append(dec_scores)
+        ckpt_file_array.append(file_array)
+        print 'Batch %d took %.1f seconds' % (
+            idx, time.time() - start_time)
+    sess.close()
 
     # Save everything
     np.savez(
@@ -166,17 +169,16 @@ def test_vgg16(image_dir, model_file):
 
     # Also save a csv with item/guess pairs
     try:
-        import ipdb;ipdb.set_trace()
         dec_scores = np.asarray(dec_scores)
         yhat = np.asarray(yhat)
         df = pd.DataFrame(
             np.hstack((
-                ckpt_file_array.reshape(-1, 1),
+                np.asarray(ckpt_file_array).reshape(-1, 1),
                 yhat.reshape(-1, 1),
                 dec_scores.reshape(dec_scores.shape[0]//2, 2))),
-            columns=['files', 'guesses', 'classifier scores'])
+            columns=['files', 'guesses', 'classifier score live', 'classifier score dead'])
         df.to_csv(os.path.join(out_dir, 'prediction_file.csv'))
-        print 'Saved csv to: %s' % out_dir
+        print 'Saved csv to: %s' % os.path.join(out_dir, 'prediction_file.csv')
     except:
         print 'X'*60
         print 'Could not save a spreadsheet of file info'
@@ -185,10 +187,10 @@ def test_vgg16(image_dir, model_file):
     # Plot everything
     try:
         plot_accuracies(
-            ckpt_y, ckpt_yhat, config, ckpt_names,
+            ckpt_y, ckpt_yhat, config, ckpts,
             os.path.join(out_dir, 'validation_accuracies.png'))
         plot_std(
-            ckpt_y, ckpt_yhat, ckpt_names, os.path.join(
+            ckpt_y, ckpt_yhat, ckpts, os.path.join(
                 out_dir, 'validation_stds.png'))
         plot_cms(
             ckpt_y, ckpt_yhat, config, os.path.join(
@@ -197,7 +199,7 @@ def test_vgg16(image_dir, model_file):
             ckpt_y, ckpt_yhat, ckpt_scores, os.path.join(
                 out_dir, 'precision_recall.png'))
         plot_cost(
-            os.path.join(out_dir, 'training_loss.npy'), ckpt_names,
+            os.path.join(out_dir, 'training_loss.npy'), ckpts,
             os.path.join(out_dir, 'training_costs.png'))
     except:
         print 'X'*60

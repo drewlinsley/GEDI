@@ -82,8 +82,8 @@ class GEDIconfig(object):  # at some point use pjoin throughout
         elif self.which_dataset == 'ratio':
             self.panel = 2
             self.divide_panel = 0
-        self.max_gedi = None  # 16117.  # Max value of imaging equiptment (Must be float!). If this is None, scripts will use empirical values.
-        self.min_gedi = None  # 0.  # 0  # Min value of imaging equiptment (Must be float!).
+        self.max_gedi = 16117.  # Max value of imaging equiptment (Must be float!). If this is None, scripts will use empirical values.
+        self.min_gedi = 0.  # 0  # Min value of imaging equiptment (Must be float!).
 
         # Paths for creating tfrecords.
         self.GEDI_path = pjoin(self.home_dir, self.project_stem)
@@ -126,7 +126,7 @@ class GEDIconfig(object):  # at some point use pjoin throughout
         self.train_shards = 1
         self.validation_shards = 1
         self.train_batch = 64  # Number of training images per iteration of training.
-        self.validation_batch = 32  # Number of validation images to evaluate after every N iterations. 
+        self.validation_batch = 1  # Number of validation images to evaluate after every N iterations. 
         # Normalize GEDIs in uint8 to 0-1 float. May be redundant.
         self.normalize = False  # Normalize each image to [0, 1] during preprocessing.
 
