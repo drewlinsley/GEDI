@@ -42,7 +42,7 @@ def image_batcher(
         # Add dimensions and concatenate
         yield np.concatenate(
             [x[None, :, :, None] for x in image_stack], axis=0).repeat(
-                3, axis=-1)
+                3, axis=-1), next_image_batch
 
 
 def randomization_test(y, yhat, iterations=10000):
@@ -109,13 +109,13 @@ def test_vgg16(image_dir, model_file):
 
     # Loop through each checkpoint then test the entire validation set
     ckpts = [model_file]
-    ckpt_yhat, ckpt_y, ckpt_scores = [], [], []
+    ckpt_yhat, ckpt_y, ckpt_scores, ckpt_file_array = [], [], [], []
     print '-'*60
     print 'Beginning evaluation'
     print '-'*60
 
     for idx, c in tqdm(enumerate(ckpts), desc='Running checkpoints'):
-        dec_scores, yhat = [], []
+        dec_scores, yhat, file_array = [], [], []
         try:
             # Initialize the graph
             sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
@@ -129,7 +129,7 @@ def test_vgg16(image_dir, model_file):
             threads = tf.train.start_queue_runners(sess=sess, coord=coord)
             saver.restore(sess, c)
             start_time = time.time()
-            for image_batch in tqdm(
+            for image_batch, file_batch in tqdm(
                     image_batcher(
                         start=0,
                         images=combined_files,
@@ -143,11 +143,11 @@ def test_vgg16(image_dir, model_file):
                     feed_dict=feed_dict)
                 dec_scores = np.append(dec_scores, sc)
                 yhat = np.append(yhat, tyh)
+                file_array = np.append(file_array, file_batch)
         except tf.errors.OutOfRangeError:
             ckpt_yhat.append(yhat)
             ckpt_scores.append(dec_scores)
-            print 'Iteration accuracy: %s' % np.mean(yhat == y)
-            print 'Iteration pvalue: %.5f' % randomization_test(y=y, yhat=yhat)
+            ckpt_file_array.append(file_array)
             print 'Batch %d took %.1f seconds' % (
                 idx, time.time() - start_time)
         finally:
@@ -161,22 +161,20 @@ def test_vgg16(image_dir, model_file):
         ckpt_yhat=ckpt_yhat,
         ckpt_scores=ckpt_scores,
         ckpt_names=ckpts,
-        combined_files=combined_files,
+        combined_files=ckpt_file_array,
         )
 
     # Also save a csv with item/guess pairs
-    import ipdb;ipdb.set_trace()
     try:
-        trimmed_files = [re.split('/', x)[-1] for x in combined_files]
-        trimmed_files = np.asarray(trimmed_files)
+        import ipdb;ipdb.set_trace()
         dec_scores = np.asarray(dec_scores)
         yhat = np.asarray(yhat)
         df = pd.DataFrame(
             np.hstack((
-                trimmed_files.reshape(-1, 1),
+                ckpt_file_array.reshape(-1, 1),
                 yhat.reshape(-1, 1),
                 dec_scores.reshape(dec_scores.shape[0]//2, 2))),
-            columns=['files', 'guesses', 'score dead', 'score live'])
+            columns=['files', 'guesses', 'classifier scores'])
         df.to_csv(os.path.join(out_dir, 'prediction_file.csv'))
         print 'Saved csv to: %s' % out_dir
     except:
