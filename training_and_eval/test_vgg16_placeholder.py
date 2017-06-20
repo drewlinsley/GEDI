@@ -27,21 +27,22 @@ def image_batcher(
         start,
         images,
         config):
-    if start + config.validation_batch > len(images):
-        return
-    next_image_batch = images[start:start + config.validation_batch]
-    image_stack = np.concatenate(
-        [crop_center(
-            produce_patch(
-                f,
-                config.channel,
-                config.panel,
-                divide_panel=config.divide_panel,
-                max_value=config.max_gedi,
-                min_value=config.min_gedi).astype(
-                    np.float32),
-            config.config.model_image_size[:2]) for f in next_image_batch])
-    yield image_stack
+    for b in range(config.validation_batch):
+        next_image_batch = images[start:start + config.validation_batch]
+        image_stack = [crop_center(
+                produce_patch(
+                    f,
+                    config.channel,
+                    config.panel,
+                    divide_panel=config.divide_panel,
+                    max_value=config.max_gedi,
+                    min_value=config.min_gedi).astype(
+                        np.float32),
+                config.model_image_size[:2]) for f in next_image_batch]
+        # Add dimensions and concatenate
+        yield np.concatenate(
+            [x[None, :, :, None] for x in image_stack], axis=0).repeat(
+                3, axis=-1)
 
 
 def randomization_test(y, yhat, iterations=10000):
@@ -56,7 +57,7 @@ def randomization_test(y, yhat, iterations=10000):
 
 
 # Evaluate your trained model on GEDI images
-def test_vgg16(image_dir, model_dir):
+def test_vgg16(image_dir, model_file):
     config = GEDIconfig()
 
     if image_dir is None:
@@ -66,8 +67,7 @@ def test_vgg16(image_dir, model_dir):
     combined_files = np.asarray(glob(os.path.join(image_dir, '*%s' % config.raw_im_ext)))
 
     # Find model checkpoints
-    ckpts, ckpt_names = find_ckpts(config, model_dir)
-    ds_dt_stamp = re.split('/', ckpts[0])[-2]
+    ds_dt_stamp = re.split('/', model_file)[-2]
     out_dir = os.path.join(config.results, ds_dt_stamp)
     try:
         config = np.load(os.path.join(out_dir, 'meta_info.npy')).item()
@@ -88,7 +88,7 @@ def test_vgg16(image_dir, model_dir):
     # Prepare data on CPU
     images = tf.placeholder(
         tf.float32,
-        shape=[None] + config.model_image_size[:2],
+        shape=[None] + config.model_image_size,
         name='images')
 
     # Prepare model on GPU
@@ -108,20 +108,14 @@ def test_vgg16(image_dir, model_dir):
     saver = tf.train.Saver(tf.global_variables())
 
     # Loop through each checkpoint then test the entire validation set
+    ckpts = [model_file]
     ckpt_yhat, ckpt_y, ckpt_scores = [], [], []
     print '-'*60
     print 'Beginning evaluation'
     print '-'*60
 
-    if selected_ckpts is not None:
-        # Select a specific ckpt
-        if selected_ckpts < 0:
-            ckpts = ckpts[selected_ckpts:]
-        else:
-            ckpts = ckpts[:selected_ckpts]
-
     for idx, c in tqdm(enumerate(ckpts), desc='Running checkpoints'):
-        dec_scores, yhat, y = [], [], []
+        dec_scores, yhat = [], []
         try:
             # Initialize the graph
             sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
@@ -135,22 +129,22 @@ def test_vgg16(image_dir, model_dir):
             threads = tf.train.start_queue_runners(sess=sess, coord=coord)
             saver.restore(sess, c)
             start_time = time.time()
-            for image_batch, label_batch in image_batcher(
-                    start=0,
-                    images=combined_files,
-                    config=config):
+            for image_batch in tqdm(
+                    image_batcher(
+                        start=0,
+                        images=combined_files,
+                        config=config),
+                    total=len(combined_files) // config.validation_batch):
                 feed_dict = {
                     images: image_batch
                 }
-                sc, tyh, ty = sess.run(
-                    [scores, preds, targets],
+                sc, tyh = sess.run(
+                    [scores, preds],
                     feed_dict=feed_dict)
                 dec_scores = np.append(dec_scores, sc)
                 yhat = np.append(yhat, tyh)
-                y = np.append(y, ty)
         except tf.errors.OutOfRangeError:
             ckpt_yhat.append(yhat)
-            ckpt_y.append(y)
             ckpt_scores.append(dec_scores)
             print 'Iteration accuracy: %s' % np.mean(yhat == y)
             print 'Iteration pvalue: %.5f' % randomization_test(y=y, yhat=yhat)
@@ -165,14 +159,13 @@ def test_vgg16(image_dir, model_dir):
     np.savez(
         os.path.join(out_dir, 'validation_accuracies'),
         ckpt_yhat=ckpt_yhat,
-        ckpt_y=ckpt_y,
         ckpt_scores=ckpt_scores,
-        ckpt_names=ckpt_names,
-        live_files=live_files,
-        dead_files=dead_files,
+        ckpt_names=ckpts,
+        combined_files=combined_files,
         )
 
     # Also save a csv with item/guess pairs
+    import ipdb;ipdb.set_trace()
     try:
         trimmed_files = [re.split('/', x)[-1] for x in combined_files]
         trimmed_files = np.asarray(trimmed_files)
@@ -217,16 +210,16 @@ def test_vgg16(image_dir, model_dir):
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument(
-        "--image_folder",
+        "--image_dir",
         type=str,
-        dest="image_folder",
-        default=None,
-        help="Folder containing your .tiff images.")
+        dest="image_dir",
+        default='/Users/drewlinsley/Documents/GEDI_images/human_bs',
+        help="Directory containing your .tiff images.")
     parser.add_argument(
-        "--model_dir",
+        "--model_file",
         type=str,
-        dest="model_dir",
-        default=None,
+        dest="model_file",
+        default='/Users/drewlinsley/Desktop/trained_gedi_model/model_58600.ckpt-58600',
         help="Folder containing your trained CNN's checkpoint files.")
     args = parser.parse_args()
     test_vgg16(**vars(args))

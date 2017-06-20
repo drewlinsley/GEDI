@@ -1,13 +1,17 @@
 # GEDI CNN project
 
 ## Your first step should be to run the setup script. (Use `sudo` if you must).
-```python setup.py install```
+```python setup.py install```.
 
 ## Next, download the following model ``weight'' files from the below links
 1. https://mega.nz/#!YU1FWJrA!O1ywiCS2IiOlUCtCpI6HTJOMrneN-Qdv3ywQP5poecM
    * These are your ImageNet pretrained VGG16 weights. In the config, these are pointed to with `self.vgg16_weight_path`.
-2. https://mega.nz/#F!tbQkzLqS!xLhX6lhyriRHIR7i72fJ3Q
+2. https://mega.nz/#F!pHRF2TrT!EM52TFSkqKov-X8W_WAHxg
    * These are the weight files for a CNN trained to discriminate between live/dead cells (with GEDI ground-truth). 
+
+## Last but not least, copy the 'gedi_config.py.template' file as 'gedi_config.py' and adjust it to match your system.
+
+---
 
 ## If you're using this project you will want to do one of four things (advanced operations, like ratio and time-course prediction will be added below):
 1. Convert data into a CNN-friendly format.
@@ -49,7 +53,7 @@ After preparing data in a CNN-friendly format, you want to train a model. Look i
 
 ## 3. Test data on a model.
 * Option A: Pass your tiff images through a pretrained model. Put all of your images in one folder ('image_folder' in the command below) and all of your model checkpoint files that you downloaded above (the second mega.nz link above) in a seperate folder ('model_dir' in the command below).
-```python training_and_eval --image_folder=/home/to/my_images_for_cnn --model_dir=/path/to/GEDI_trained_model```
+```python training_and_eval/test_vgg16_placeholder.py --image_dir=/home/to/my_images_for_cnn --model_dir=/path/to/GEDI_trained_model/model_58600.ckpt-58600```
 
 * Option B: Test a model on any dataset (assuming similar charactaristics of both, e.g. both are Rat neurons). (model_dir is your model, validation_data is the tf-records file you want to test on.)
 
