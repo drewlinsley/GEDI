@@ -53,7 +53,7 @@ After preparing data in a CNN-friendly format, you want to train a model. Look i
 
 ## 3. Test data on a model.
 * Option A: Pass your tiff images through a pretrained model. Put all of your images in one folder ('image_folder' in the command below) and all of your model checkpoint files that you downloaded above (the second mega.nz link above) in a seperate folder ('model_dir' in the command below).
-```python training_and_eval/test_vgg16_placeholder.py --image_dir=/home/to/my_images_for_cnn --model_dir=/path/to/GEDI_trained_model/model_58600.ckpt-58600```
+```python training_and_eval/test_vgg16_placeholder.py --image_dir=/home/to/my_images_for_cnn --model_file=/path/to/GEDI_trained_model/model_58600.ckpt-58600```
 
 * Option B: Test a model on any dataset (assuming similar charactaristics of both, e.g. both are Rat neurons). (model_dir is your model, validation_data is the tf-records file you want to test on.)
 
@@ -68,6 +68,13 @@ After preparing data in a CNN-friendly format, you want to train a model. Look i
 
 ```python visualization/gradient_tf.py --model_dir=/media/data/GEDI/drew_images/project_files/train_checkpoint/gfp_2017_05_27_13_56_55 --validation_data=/media/data/GEDI/drew_images/project_files/tfrecords/all_rh_analysis_rat_gfp/val.tfrecords --selected_ckpts=32```
  
+
+## Common errors:
+* `Traceback (most recent call last):
+  File "training_and_eval/test_vgg16_placeholder.py", line 13, in <module>
+    from gedi_config import GEDIconfig
+ImportError: No module named gedi_config`
+Setup did not successfully add the project directory to your pythonpath, so you have to do this by hand: `export PYTHONPATH=$PYTHONPATH:/my/path/with/gedi_project`
 
 
 -- Need to add the filename to tfrecords
