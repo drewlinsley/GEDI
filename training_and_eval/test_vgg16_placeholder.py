@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from argparse import ArgumentParser
 from glob import glob
-from exp_ops.tf_fun import make_dir, find_ckpts
+from exp_ops.tf_fun import make_dir
 from exp_ops.plotting_fun import plot_accuracies, plot_std, plot_cms, plot_pr,\
     plot_cost
 from exp_ops.preprocessing_GEDI_images import produce_patch
@@ -16,11 +16,11 @@ from tqdm import tqdm
 
 
 def crop_center(img, crop_size):
-    x, y = img.shape
+    x, y = img.shape[:2]
     cx, cy = crop_size
-    startx = x//2-(cx//2)
-    starty = y//2-(cy//2)
-    return img[starty:starty+cy, startx:startx+cx]
+    startx = x // 2 - (cx // 2)
+    starty = y // 2 - (cy // 2)
+    return img[starty:starty + cy, startx:startx + cx]
 
 
 def renormalize(img, max_value, min_value):
@@ -31,25 +31,38 @@ def image_batcher(
         start,
         num_batches,
         images,
-        config):
+        config,
+        training_max,
+        training_min):
     for b in range(num_batches):
         print start, len(images)
         next_image_batch = images[start:start + config.validation_batch]
-        image_stack = [renormalize(
-            crop_center(
-                produce_patch(
-                    f,
-                    config.channel,
-                    config.panel,
-                    divide_panel=config.divide_panel),
-                config.model_image_size[:2]),
-            max_value=config.max_gedi,
-            min_value=config.min_gedi   
-            ) for f in next_image_batch]
+        image_stack = []
+        for f in next_image_batch:
+            # 1. Load image patch
+            patch = produce_patch(
+                f,
+                config.channel,
+                config.panel,
+                divide_panel=config.divide_panel,
+                max_value=config.max_gedi,
+                min_value=config.min_gedi).astype(np.float32)
+            # 2. Repeat to 3 channel (RGB) image
+            patch = np.repeat(patch[:, :, None], 3, axis=-1)
+            # 3. Renormalize based on the training set intensities
+            patch = renormalize(
+                patch,
+                max_value=training_max,
+                min_value=training_min)
+            # 4. Crop the center
+            patch = crop_center(patch, config.model_image_size[:2])
+            # 5. Clip to [0, 1] just in case
+            patch[patch > 1.] = 1.
+            patch[patch < 0.] = 0.
+            # 6. Add to list
+            image_stack += [patch[None, :, :, :]]
         # Add dimensions and concatenate
-        yield np.concatenate(
-            [x[None, :, :, None] for x in image_stack], axis=0).repeat(
-                3, axis=-1), next_image_batch
+        yield np.concatenate(image_stack, axis=0), next_image_batch
 
 
 def randomization_test(y, yhat, iterations=10000):
@@ -64,31 +77,29 @@ def randomization_test(y, yhat, iterations=10000):
 
 
 # Evaluate your trained model on GEDI images
-def test_vgg16(image_dir, model_file):
-    config = GEDIconfig()
+def test_vgg16(image_dir, model_file, output_csv='prediction_file'):
 
+    config = GEDIconfig()
     if image_dir is None:
         raise RuntimeError(
             'You need to supply a directory path to the images.')
 
     combined_files = np.asarray(glob(os.path.join(image_dir, '*%s' % config.raw_im_ext)))
+    config = GEDIconfig()
+    meta_file_pointer = os.path.join(
+        model_file.split('/model')[0], 'train_maximum_value.npz')
+    if not os.path.exists(meta_file_pointer):
+        raise RuntimeError(
+            'Cannot find the training data meta file. Download this from the link described in the README.md.')
+    meta_data = np.load(meta_file_pointer)
+
+    # Prepare image normalization values
+    training_max = np.max(meta_data['max_array']).astype(np.float32)
+    training_min = np.min(meta_data['min_array']).astype(np.float32)
 
     # Find model checkpoints
     ds_dt_stamp = re.split('/', model_file)[-2]
     out_dir = os.path.join(config.results, ds_dt_stamp)
-    try:
-        config = np.load(os.path.join(out_dir, 'meta_info.npy')).item()
-        # Make sure this is always at 1
-        config.validation_batch = 1
-        print '-'*60
-        print 'Loading config meta data for:%s' % out_dir
-        print '-'*60
-    except:
-        print '-'*60
-        print 'Using config from gedi_config.py for model:%s' % out_dir
-        print '-'*60
-        max_value = np.asarray(config.max_gedi).astype(np.float32)
-        min_value = np.asarray(config.min_gedi).astype(np.float32)
 
     # Make output directories if they do not exist
     dir_list = [config.results, out_dir]
@@ -107,7 +118,8 @@ def test_vgg16(image_dir, model_file):
                 vgg16_npy_path=config.vgg16_weight_path,
                 fine_tune_layers=config.fine_tune_layers)
             vgg.build(
-                images, output_shape=config.output_shape)
+                images,
+                output_shape=config.output_shape)
 
         # Setup validation op
         scores = vgg.prob
@@ -119,9 +131,13 @@ def test_vgg16(image_dir, model_file):
     # Loop through each checkpoint then test the entire validation set
     ckpts = [model_file]
     ckpt_yhat, ckpt_y, ckpt_scores, ckpt_file_array = [], [], [], []
-    print '-'*60
+    print '-' * 60
     print 'Beginning evaluation'
-    print '-'*60
+    print '-' * 60
+
+    if config.validation_batch > len(combined_files):
+        print 'Trimming validation_batch size to %s (same as # of files).' % len(combined_files)
+        config.validation_batch = len(combined_files)
 
     for idx, c in tqdm(enumerate(ckpts), desc='Running checkpoints'):
         dec_scores, yhat, file_array = [], [], []
@@ -141,7 +157,9 @@ def test_vgg16(image_dir, model_file):
                     start=0,
                     num_batches=num_batches,
                     images=combined_files,
-                    config=config),
+                    config=config,
+                    training_max=training_max,
+                    training_min=training_min),
                 total=num_batches):
             feed_dict = {
                 images: image_batch
@@ -165,8 +183,7 @@ def test_vgg16(image_dir, model_file):
         ckpt_yhat=ckpt_yhat,
         ckpt_scores=ckpt_scores,
         ckpt_names=ckpts,
-        combined_files=ckpt_file_array,
-        )
+        combined_files=ckpt_file_array)
 
     # Also save a csv with item/guess pairs
     try:
@@ -177,9 +194,10 @@ def test_vgg16(image_dir, model_file):
                 np.asarray(ckpt_file_array).reshape(-1, 1),
                 yhat.reshape(-1, 1),
                 dec_scores.reshape(dec_scores.shape[0]//2, 2))),
-            columns=['files', 'guesses', 'classifier score live', 'classifier score dead'])
-        df.to_csv(os.path.join(out_dir, 'prediction_file.csv'))
-        print 'Saved csv to: %s' % os.path.join(out_dir, 'prediction_file.csv')
+            columns=['files', 'live_guesses', 'classifier score dead', 'classifier score live'])
+        output_name = image_dir.split('/')[-1]
+        df.to_csv(os.path.join(out_dir, '%s.csv' % output_name))
+        print 'Saved csv to: %s' % os.path.join(out_dir, '%s.csv' % output_name)
     except:
         print 'X'*60
         print 'Could not save a spreadsheet of file info'

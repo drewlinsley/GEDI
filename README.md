@@ -1,7 +1,7 @@
 # GEDI CNN project
 
-## Your first step should be to run the setup script. (Use `sudo` if you must).
-```python setup.py install```.
+## Your first step is to install requirements. (Use `sudo` if you must).
+```python  install -r requirements.txt```.
 
 ## Next, download the following model ``weight'' files from the below links
 1. https://mega.nz/#!YU1FWJrA!O1ywiCS2IiOlUCtCpI6HTJOMrneN-Qdv3ywQP5poecM
