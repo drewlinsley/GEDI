@@ -1,4 +1,4 @@
-# GEDI CNN project
+# The GEDI CNN project
 
 ## Your first step is to install requirements. (Use `sudo` if you must).
 ```python  install -r requirements.txt```.
