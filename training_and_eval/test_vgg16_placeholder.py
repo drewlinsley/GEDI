@@ -35,7 +35,6 @@ def image_batcher(
         training_max,
         training_min):
     for b in range(num_batches):
-        print start, len(images)
         next_image_batch = images[start:start + config.validation_batch]
         image_stack = []
         for f in next_image_batch:
@@ -62,6 +61,7 @@ def image_batcher(
             # 6. Add to list
             image_stack += [patch[None, :, :, :]]
         # Add dimensions and concatenate
+        start += config.validation_batch
         yield np.concatenate(image_stack, axis=0), next_image_batch
 
 
@@ -193,15 +193,18 @@ def test_vgg16(image_dir, model_file, output_csv='prediction_file'):
             np.hstack((
                 np.asarray(ckpt_file_array).reshape(-1, 1),
                 yhat.reshape(-1, 1),
-                dec_scores.reshape(dec_scores.shape[0]//2, 2))),
+                dec_scores.reshape(dec_scores.shape[0] // 2, 2))),
             columns=['files', 'live_guesses', 'classifier score dead', 'classifier score live'])
         output_name = image_dir.split('/')[-1]
+        if output_name is None or len(output_name) == 0:
+            output_name = 'output'
         df.to_csv(os.path.join(out_dir, '%s.csv' % output_name))
-        print 'Saved csv to: %s' % os.path.join(out_dir, '%s.csv' % output_name)
+        print 'Saved csv to: %s' % os.path.join(
+            out_dir, '%s.csv' % output_name)
     except:
-        print 'X'*60
+        print 'X' * 60
         print 'Could not save a spreadsheet of file info'
-        print 'X'*60
+        print 'X' * 60
 
     # Plot everything
     try:

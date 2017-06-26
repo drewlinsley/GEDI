@@ -76,6 +76,8 @@ After preparing data in a CNN-friendly format, you want to train a model. Look i
 ImportError: No module named gedi_config`
 Setup did not successfully add the project directory to your pythonpath, so you have to do this by hand: `export PYTHONPATH=$PYTHONPATH:/my/path/with/gedi_project` or `export PYTHONPATH=$PYTHONPATH:$(pwd)`
 
+* Segmentation fault. This was raised when running the test_vgg16_placeholder.py script on the CPU. It did not repeat. Try running the script again.
+----
 
 -- Need to add the filename to tfrecords
 -- Finish the LSTM prediction
