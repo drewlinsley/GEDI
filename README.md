@@ -74,7 +74,7 @@ After preparing data in a CNN-friendly format, you want to train a model. Look i
   File "training_and_eval/test_vgg16_placeholder.py", line 13, in <module>
     from gedi_config import GEDIconfig
 ImportError: No module named gedi_config`
-Setup did not successfully add the project directory to your pythonpath, so you have to do this by hand: `export PYTHONPATH=$PYTHONPATH:/my/path/with/gedi_project`
+Setup did not successfully add the project directory to your pythonpath, so you have to do this by hand: `export PYTHONPATH=$PYTHONPATH:/my/path/with/gedi_project` or `export PYTHONPATH=$PYTHONPATH:$(pwd)`
 
 
 -- Need to add the filename to tfrecords
