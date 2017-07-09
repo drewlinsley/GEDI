@@ -8,7 +8,7 @@ from gedi_config import GEDIconfig
 from glob import glob
 from exp_ops.tf_fun import make_dir
 from exp_ops.preprocessing_tfrecords import write_label_list, sample_files, \
-    extract_to_tf_records, write_label_file, flatten_list, find_label
+    extract_to_tf_records, write_label_file, flatten_list, find_label, find_timepoint
 
 
 def get_image_dict(config):
@@ -87,7 +87,21 @@ def extract_tf_records_from_GEDI_tiffs():
     if 'val' in config.tvt_flags:
         im_lists['val'], im_lists['train'] = sample_files(
             im_lists['train'], config.train_proportion, config.tvt_flags)
-    im_labels = {k: find_label(v) for k, v in im_lists.iteritems()}
+    if config.encode_time_of_death is not None:
+        death_timepoints = pd.read_csv(config.encode_time_of_death)[['plate_well_neuron','dead_tp']]
+        im_labels = {}
+        for k, v in im_lists.iteritems():
+            if k is not 'test':
+                proc_ims, proc_labels = find_timepoint(images=v, data=death_timepoints)
+                im_labels[k] = proc_labels
+                im_lists[k] = proc_ims
+                df = pd.DataFrame(
+                    np.hstack((proc_ims, proc_labels)), columns=['image', 'timepoint'])
+                df.to_csv('*.csv' % k)
+            else:
+                im_labels = find_label(v)
+    else:
+        im_labels = {k: find_label(v) for k, v in im_lists.iteritems()}
 
     if type(config.tvt_flags) is str:
         tvt_flags = [config.tvt_flags]

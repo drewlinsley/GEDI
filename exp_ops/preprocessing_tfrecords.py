@@ -257,3 +257,32 @@ def write_label_file(labels_to_class_names, dataset_dir,
         for label in labels_to_class_names:
             class_name = labels_to_class_names[label]
             f.write('%d:%s\n' % (label, class_name))
+
+
+def find_timepoint(images, data, label_column='plate_well_neuron', remove_prefix='bs_'):
+    pre_len = len(images)
+    images = [im for im in images if remove_prefix not in im]
+    post_len = len(images)
+    print 'Removed %s bs images (%s remaining).' % ((pre_len - post_len), post_len)
+    data_labels = data[label_column]
+    data_splits = data_labels.str.split('_').as_matrix()
+    im_timepoints = np.zeros((len(images))) - 1
+    for imidx, im in tqdm(enumerate(images), total=len(images)):
+        im_name = im.split('/')[-1]
+        im_name = im_name.split('_')
+        exp_name = im_name[1]
+        well_name = im_name[2]
+        cell_number = im_name[3]
+        for idx, r in enumerate(data_splits):
+            exp_check = r[1] == exp_name
+            well_check = r[2] == well_name
+            cell_check = r[3] == cell_number
+            if exp_check and well_check and cell_check:
+                im_timepoints[imidx] = data.iloc[idx]['dead_tp']
+    # Remove images and timepoints where we have a -1 (i.e. no timecourse data)
+    keep_idx = im_timepoints != -1
+    np_images = np.asarray(images)
+    images = list(np_images[keep_idx])
+    im_timepoints = im_timepoints[keep_idx]
+    return images, im_timepoints
+
