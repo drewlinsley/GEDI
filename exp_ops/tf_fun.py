@@ -47,17 +47,18 @@ def tf_confusion_matrix(pred, targets):
     return tf.contrib.metrics.confusion_matrix(pred, targets)  # confusion
 
 
-def softmax_cost(logits, labels, ratio=None, rebalance=1):
+def softmax_cost(logits, labels, ratio=None, rebalance=1, flip_ratio=True):
     if ratio is not None:
         if rebalance is not None:
             ratio *= rebalance
-        ratio = ratio[::-1]
+        if flip_ratio:
+            ratio = ratio[::-1]
         print 'Reweighting logits to: %s' % ratio
 
         ratios = tf.get_variable(
             name='ratio', initializer=ratio)[None, :]
         weights_per_label = tf.matmul(
-            tf.one_hot(labels, 2), tf.transpose(tf.cast(ratios, tf.float32)))
+            tf.one_hot(labels, int(logits.get_shape()[-1])), tf.transpose(tf.cast(ratios, tf.float32)))
         return tf.reduce_mean(
             tf.multiply(
                 weights_per_label,

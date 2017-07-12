@@ -95,11 +95,10 @@ def extract_tf_records_from_GEDI_tiffs():
                 proc_ims, proc_labels = find_timepoint(images=v, data=death_timepoints)
                 im_labels[k] = proc_labels
                 im_lists[k] = proc_ims
-                df = pd.DataFrame(
-                    np.hstack((proc_ims, proc_labels)), columns=['image', 'timepoint'])
-                df.to_csv('*.csv' % k)
+                df = pd.DataFrame(np.vstack((proc_ims, proc_labels)).transpose(), columns=['image', 'timepoint'])
+                df.to_csv('%s.csv' % k)
             else:
-                im_labels = find_label(v)
+                im_labels[k] = find_label(v)
     else:
         im_labels = {k: find_label(v) for k, v in im_lists.iteritems()}
 

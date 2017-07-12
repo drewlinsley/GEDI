@@ -146,14 +146,17 @@ def get_image_ratio(
         ):
     '''Loop through the ratio list until you find the
     id_column row that matches f'''
-    f_re = re.search(regex_match, f).group()
-    if id_column not in ratio_list.columns:
-        raise RuntimeError('Cannot find your id_column in the dataframe.')
-    r = ratio_list[ratio_list[id_column].str.contains(f_re)]
-    if r.empty:
+    if f is None or ratio_list is None:
         return None
     else:
-        return [r[str(x)].as_matrix() for x in timepoints]
+        f_re = re.search(regex_match, f).group()
+        if id_column not in ratio_list.columns:
+            raise RuntimeError('Cannot find your id_column in the dataframe.')
+        r = ratio_list[ratio_list[id_column].str.contains(f_re)]
+        if r.empty:
+            return None
+        else:
+            return [r[str(x)].as_matrix() for x in timepoints]
 
 
 def features_to_dict(
@@ -266,7 +269,7 @@ def find_timepoint(images, data, label_column='plate_well_neuron', remove_prefix
     print 'Removed %s bs images (%s remaining).' % ((pre_len - post_len), post_len)
     data_labels = data[label_column]
     data_splits = data_labels.str.split('_').as_matrix()
-    im_timepoints = np.zeros((len(images))) - 1
+    im_timepoints = np.zeros((len(images)), dtype=int) - 1
     for imidx, im in tqdm(enumerate(images), total=len(images)):
         im_name = im.split('/')[-1]
         im_name = im_name.split('_')
@@ -278,7 +281,7 @@ def find_timepoint(images, data, label_column='plate_well_neuron', remove_prefix
             well_check = r[2] == well_name
             cell_check = r[3] == cell_number
             if exp_check and well_check and cell_check:
-                im_timepoints[imidx] = data.iloc[idx]['dead_tp']
+                im_timepoints[imidx] = data.iloc[idx]['dead_tp'].astype(int)
     # Remove images and timepoints where we have a -1 (i.e. no timecourse data)
     keep_idx = im_timepoints != -1
     np_images = np.asarray(images)

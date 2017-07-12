@@ -10,6 +10,8 @@ from exp_ops.tf_fun import make_dir, softmax_cost, fine_tune_prepare_layers, \
     ft_non_optimized, class_accuracy
 from gedi_config import GEDIconfig
 from models import GEDI_vgg16_trainable_batchnorm_shared as vgg16
+import pandas as pd
+from sklearn.utils import class_weight
 
 
 # Train or finetune a vgg16 for the GEDI dataset
@@ -47,6 +49,15 @@ def train_vgg16(train_dir=None, validation_dir=None):
         max_value = config.max_gedi
         min_value = config.min_gedi
     ratio = meta_data['ratio']
+    if config.encode_time_of_death:
+        tod = pd.read_csv(config.encode_time_of_death)
+        ratio = class_weight.compute_class_weight(
+            'balanced',
+            tod['dead_tp'].unique(),
+            tod['dead_tp'].as_matrix())
+        flip_ratio = False
+    else:
+        flip_ratio = True
     print 'Ratio is: %s' % ratio
 
     if validation_dir is None:  # Use globals
@@ -115,7 +126,7 @@ def train_vgg16(train_dir=None, validation_dir=None):
 
             # Prepare the cost function
             if config.balance_cost:
-                cost = softmax_cost(vgg.fc8, train_labels, ratio=ratio)
+                cost = softmax_cost(vgg.fc8, train_labels, ratio=ratio, flip_ratio=flip_ratio)
             else:
                 cost = softmax_cost(vgg.fc8, train_labels)
             tf.summary.scalar("cost", cost)
@@ -174,6 +185,10 @@ def train_vgg16(train_dir=None, validation_dir=None):
     np.save(out_dir + 'meta_info', config)
     step, losses = 0, []  # val_max = 0
 
+    if config.resume_training_from_model is not None:
+        print 'Resuming training from %s' % config.resume_training_from_model
+        saver.restore(sess, config.resume_training_from_model)
+
     try:
         # print response
         while not coord.should_stop():
@@ -184,7 +199,7 @@ def train_vgg16(train_dir=None, validation_dir=None):
             duration = time.time() - start_time
             assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
 
-            if step % 100 == 0:
+            if step % 1000 == 0:
                 if validation_data is not False:
                     _, val_acc = sess.run([train_op, val_accuracy])
                 else:
