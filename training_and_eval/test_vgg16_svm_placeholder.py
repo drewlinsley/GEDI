@@ -194,29 +194,10 @@ def test_vgg16(
             idx, time.time() - start_time)
     sess.close()
 
-    # Save everything
-    np.savez(
-        os.path.join(out_dir, 'validation_accuracies'),
-        ckpt_yhat=ckpt_yhat,
-        ckpt_y=ckpt_yh,
-        ckpt_scores=ckpt_scores,
-        ckpt_names=ckpts,
-        combined_files=ckpt_file_array)
+    # Pass data through the classifier
+    with open(svm_model, 'rb') as fid:
+        gnb_loaded = cPickle.load(fid)
 
-    # Run SVM
-    class_weight = {np.argmax(meta_data['ratio']): meta_data['ratio'].max() / meta_data['ratio'].min()} 
-    svm = LinearSVC(C=C, dual=False)  # , class_weight=class_weight) 
-    clf = make_pipeline(preprocessing.StandardScaler(), svm)
-    cv_performance = cross_val_score(clf, dec_scores, y, cv=5)
-    np.savez(
-        os.path.join(out_dir, 'svm_data'),
-        yhat=yhat,
-        y=y,
-        scores=dec_scores,
-        ckpts=ckpts,
-        cv_performance=cv_performance)
-    p_value = randomization_test(y=y, yhat=yhat)
-    print 'SVM performance: %s%%, p = %.5f' % (cv_performance * 100, p_value)
 
     # save the classifier
     print 'Saving model to: %s' % output_svm
@@ -270,7 +251,7 @@ if __name__ == '__main__':
         default='prediction_file',
         help="Name of your prediction csv file.")
     parser.add_argument(
-        "--output_svm",
+        "--svm_model",
         type=str,
         dest="svm_model",
         default='output_svm',

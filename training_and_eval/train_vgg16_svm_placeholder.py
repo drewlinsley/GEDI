@@ -88,6 +88,7 @@ def test_vgg16(
         live_ims,
         dead_ims,
         model_file,
+        svm_model='svm_model',
         output_csv='prediction_file',
         C=1e-3):
     config = GEDIconfig()
@@ -219,8 +220,8 @@ def test_vgg16(
     print 'SVM performance: %s%%, p = %.5f' % (cv_performance * 100, p_value)
 
     # save the classifier
-    print 'Saving model to: %s' % output_svm
-    with open('%s.pkl' % output_svm, 'wb') as fid:
+    print 'Saving model to: %s' % svm_model
+    with open('%s.pkl' % svm_model, 'wb') as fid:
         cPickle.dump(clf, fid)    
 
     # Also save a csv with item/guess pairs
