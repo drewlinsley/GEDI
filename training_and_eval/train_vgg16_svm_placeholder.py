@@ -17,6 +17,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.svm import LinearSVC
 from sklearn import preprocessing
 from sklearn.model_selection import cross_val_score
+from sklearn.utils import class_weight
 from tqdm import tqdm
 
 
@@ -92,13 +93,18 @@ def test_vgg16(
         output_csv='prediction_file',
         C=1e-3):
     config = GEDIconfig()
-    if image_dir is None:
+    if live_ims is None:
         raise RuntimeError(
-            'You need to supply a directory path to the images.')
+            'You need to supply a directory path to the live images.')
+    if dead_ims is None:
+        raise RuntimeError(
+            'You need to supply a directory path to the dead images.')
 
     live_files = glob(os.path.join(live_ims, '*%s' % config.raw_im_ext))
     dead_files = glob(os.path.join(dead_ims, '*%s' % config.raw_im_ext))
-    combined_labels = np.concatenate((np.zeros(len(live_files)), np.ones(len(dead_files)))))
+    combined_labels = np.concatenate((
+        np.zeros(len(live_files)),
+        np.ones(len(dead_files))))
     combined_files = np.concatenate((live_files, dead_files))
     config = GEDIconfig()
     meta_file_pointer = os.path.join(
@@ -183,7 +189,7 @@ def test_vgg16(
             sc, tyh = sess.run(
                 [scores, preds],
                 feed_dict=feed_dict)
-            dec_scores = np.append(dec_scores, sc)
+            dec_scores += [sc]
             yhat = np.append(yhat, tyh)
             y = np.append(y, label_batch)
             file_array = np.append(file_array, file_batch)
@@ -199,16 +205,19 @@ def test_vgg16(
     np.savez(
         os.path.join(out_dir, 'validation_accuracies'),
         ckpt_yhat=ckpt_yhat,
-        ckpt_y=ckpt_yh,
+        ckpt_y=ckpt_y,
         ckpt_scores=ckpt_scores,
         ckpt_names=ckpts,
         combined_files=ckpt_file_array)
 
     # Run SVM
-    class_weight = {np.argmax(meta_data['ratio']): meta_data['ratio'].max() / meta_data['ratio'].min()} 
-    svm = LinearSVC(C=C, dual=False)  # , class_weight=class_weight) 
+    cw = class_weight.compute_class_weight(
+        'balanced',
+        np.unique(ckpt_y),
+        ckpt_y[0])
+    svm = LinearSVC(C=C, dual=False, class_weight='balanced')
     clf = make_pipeline(preprocessing.StandardScaler(), svm)
-    cv_performance = cross_val_score(clf, dec_scores, y, cv=5)
+    cv_performance = cross_val_score(clf, np.concatenate(dec_scores), y, cv=10)
     np.savez(
         os.path.join(out_dir, 'svm_data'),
         yhat=yhat,
@@ -222,7 +231,7 @@ def test_vgg16(
     # save the classifier
     print 'Saving model to: %s' % svm_model
     with open('%s.pkl' % svm_model, 'wb') as fid:
-        cPickle.dump(clf, fid)    
+        cPickle.dump(clf, fid)
 
     # Also save a csv with item/guess pairs
     try:
