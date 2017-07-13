@@ -235,7 +235,7 @@ def test_vgg16(
 
     # Also save a csv with item/guess pairs
     try:
-        trimmed_files = [re.split('/', x)[-1] for x in file_pointers]
+        trimmed_files = [re.split('/', x)[-1] for x in combined_files]
         trimmed_files = np.asarray(trimmed_files)
         dec_scores = np.asarray(dec_scores)
         yhat = np.asarray(yhat)
@@ -243,8 +243,8 @@ def test_vgg16(
             np.hstack((
                 trimmed_files.reshape(-1, 1),
                 yhat.reshape(-1, 1),
-                dec_scores.reshape(dec_scores.shape[0]//2, 2))),
-            columns=['files', 'guesses', 'score dead', 'score live'])
+                y.reshape(-1, 1))),
+            columns=['files', 'guesses', 'true label'])
         df.to_csv(os.path.join(out_dir, 'prediction_file.csv'))
         print 'Saved csv to: %s' % out_dir
     except:
