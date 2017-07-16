@@ -226,7 +226,7 @@ def test_vgg16(
         ckpts=ckpts,
         cv_performance=cv_performance)
     p_value = randomization_test(y=y, yhat=yhat)
-    print 'SVM performance: %s%%, p = %.5f' % (cv_performance * 100, p_value)
+    print 'SVM performance: %s%%, p = %.5f' % (np.mean(cv_performance * 100), 1 - p_value)
 
     # save the classifier
     print 'Saving model to: %s' % svm_model
