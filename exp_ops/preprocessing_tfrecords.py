@@ -9,6 +9,7 @@ from scipy import misc
 from glob import glob
 from tqdm import tqdm
 from exp_ops.preprocessing_GEDI_images import produce_patch
+import pandas as pd
 
 
 # # # For prepare tf records
@@ -182,7 +183,7 @@ def extract_to_tf_records(
         output_pointer,
         config,
         k):
-    print 'Building: %s' % config.tfrecord_dir
+    print 'Building %s: %s' % (k, config.tfrecord_dir)
     max_array = np.zeros(len(files))
     min_array = np.zeros(len(files))
     nan_images = np.zeros(len(files))
@@ -262,26 +263,36 @@ def write_label_file(labels_to_class_names, dataset_dir,
             f.write('%d:%s\n' % (label, class_name))
 
 
-def find_timepoint(images, data, label_column='plate_well_neuron', remove_prefix='bs_'):
+def find_timepoint(
+        images,
+        data,
+        label_column='plate_well_neuron',
+        remove_prefix='bs_',
+        remove_thresh=10):  # exclusion is some large value
     pre_len = len(images)
     images = [im for im in images if remove_prefix not in im]
     post_len = len(images)
-    print 'Removed %s bs images (%s remaining).' % ((pre_len - post_len), post_len)
+    print 'Removed %s bs images (%s remaining).' % ((
+        pre_len - post_len), post_len)
     data_labels = data[label_column]
-    data_splits = data_labels.str.split('_').as_matrix()
-    im_timepoints = np.zeros((len(images)), dtype=int) - 1
+    data_labels = data_labels.str.replace('^(.*?)_', '')
+    im_timepoints = np.ones((len(images)), dtype=int) * -1
     for imidx, im in tqdm(enumerate(images), total=len(images)):
         im_name = im.split('/')[-1]
         im_name = im_name.split('_')
         exp_name = im_name[1]
         well_name = im_name[2]
         cell_number = im_name[3]
-        for idx, r in enumerate(data_splits):
-            exp_check = r[1] == exp_name
-            well_check = r[2] == well_name
-            cell_check = r[3] == cell_number
-            if exp_check and well_check and cell_check:
-                im_timepoints[imidx] = data.iloc[idx]['dead_tp'].astype(int)
+        len_ref = data_labels.str.len()
+        probe_name = '%s_%s_%s' % (exp_name, well_name, cell_number)
+        cross_ref = data_labels.str.match(probe_name)
+        mask = (len_ref == len(probe_name)) & cross_ref
+        if mask.sum() == 1:
+            it_data = data.loc[mask]['dead_tp'].as_matrix()[0].astype(int)
+            if it_data < remove_thresh:
+                im_timepoints[imidx] = it_data
+        elif mask.sum() > 1:
+            print 'Found multiple entries??'
     # Remove images and timepoints where we have a -1 (i.e. no timecourse data)
     keep_idx = im_timepoints != -1
     np_images = np.asarray(images)

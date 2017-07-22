@@ -9,7 +9,8 @@ from exp_ops.data_loader import inputs
 from exp_ops.tf_fun import make_dir, softmax_cost, fine_tune_prepare_layers, \
     ft_non_optimized, class_accuracy
 from gedi_config import GEDIconfig
-from models import GEDI_vgg16_trainable_batchnorm_shared as vgg16
+# from models import GEDI_vgg16_trainable_batchnorm_shared as vgg16
+from models import baseline_vgg16 as vgg16
 import pandas as pd
 from sklearn.utils import class_weight
 
@@ -51,10 +52,15 @@ def train_vgg16(train_dir=None, validation_dir=None):
     ratio = meta_data['ratio']
     if config.encode_time_of_death:
         tod = pd.read_csv(config.encode_time_of_death)
+        tod_data = tod['dead_tp'].as_matrix()
+        mask = np.isnan(tod_data).astype(int) + (tod['plate_well_neuron'] == 'empty').as_matrix().astype(int)
+        tod_data = tod_data[mask == 0]
+        tod_data = tod_data[tod_data < 10]  # throw away values have a high number
+        config.output_shape = len(np.unique(tod_data))
         ratio = class_weight.compute_class_weight(
             'balanced',
-            tod['dead_tp'].unique(),
-            tod['dead_tp'].as_matrix())
+            np.sort(np.unique(tod_data)),
+            tod_data)
         flip_ratio = False
     else:
         flip_ratio = True
@@ -116,22 +122,62 @@ def train_vgg16(train_dir=None, validation_dir=None):
     # Prepare model on GPU
     with tf.device('/gpu:0'):
         with tf.variable_scope('cnn') as scope:
+            if config.output_shape > 2:  # Hardcoded fix for timecourse pred
+                reg_cost = True
+                vgg_output = config.output_shape * 2
+            else:
+                reg_cost = False
+                vgg_output = config.output_shape
             vgg = vgg16.Vgg16(
                 vgg16_npy_path=config.vgg16_weight_path,
                 fine_tune_layers=config.fine_tune_layers)
             train_mode = tf.get_variable(name='training', initializer=True)
             vgg.build(
-                train_images, output_shape=config.output_shape,
+                train_images, output_shape=vgg_output,
                 train_mode=train_mode, batchnorm=config.batchnorm_layers)
 
             # Prepare the cost function
-            if config.balance_cost:
-                cost = softmax_cost(vgg.fc8, train_labels, ratio=ratio, flip_ratio=flip_ratio)
+            if reg_cost:
+                # Encode y w/ k-hot and yhat w/ sigmoid ce. units capture dist.
+                enc = tf.concat(
+                    [tf.reshape(
+                        tf.range(
+                            0, config.output_shape), [1, -1]) for x in range(
+                        config.train_batch)], axis=0)
+                enc_train_labels = tf.cast(tf.greater_equal(
+                    enc,
+                    tf.expand_dims(train_labels, axis=1)), tf.float32)
+                split_labs = tf.split(enc_train_labels, config.output_shape, axis=1)
+                res_output = tf.reshape(vgg.fc8, [config.train_batch, 2, config.output_shape])
+                split_logs = tf.split(res_output, config.output_shape, axis=2)
+                if config.balance_cost:
+                    cost = tf.add_n([tf.nn.sparse_softmax_cross_entropy_with_logits(
+                        labels=tf.cast(s, tf.int32),
+                        logits=l) * r for s, l, r in zip(split_labs, split_logs, ratio)])
+                else:
+                    cost = tf.add_n([tf.nn.softmax_cross_entropy_with_logits(
+                        labels=tf.cast(s, tf.int32),
+                        logits=l) for s, l in zip(split_labs, split_logs)])
+                cost = tf.reduce_mean(cost)
             else:
-                cost = softmax_cost(vgg.fc8, train_labels)
+                if config.balance_cost:
+                    cost = softmax_cost(
+                        vgg.fc8,
+                        train_labels,
+                        ratio=ratio,
+                        flip_ratio=flip_ratio)
+                else:
+                    cost = softmax_cost(vgg.fc8, train_labels)
             tf.summary.scalar("cost", cost)
 
             # Finetune the learning rates
+            if config.wd_layers is not None:
+                _, l2_wd_layers = fine_tune_prepare_layers(
+                    tf.trainable_variables(), config.wd_layers)
+                l2_wd_layers = [
+                    x for x in l2_wd_layers if 'biases' not in x.name]
+                cost += (config.wd_penalty * tf.add_n(
+                        [tf.nn.l2_loss(x) for x in l2_wd_layers]))
 
             # for all variables in trainable variables
             # print name if there's duplicates you fucked up
@@ -147,8 +193,12 @@ def train_vgg16(train_dir=None, validation_dir=None):
                     tf.train.GradientDescentOptimizer,
                     config.hold_lr, config.new_lr)
 
-            train_accuracy = class_accuracy(
-                vgg.prob, train_labels)  # training accuracy
+            if reg_cost:
+                arg_guesses = tf.cast(tf.reduce_sum(tf.squeeze(tf.argmax(res_output, axis=1)), reduction_indices=[1]), tf.int32)
+                train_accuracy = tf.reduce_mean(tf.cast(tf.equal(arg_guesses, train_labels), tf.float32)) 
+            else:
+                train_accuracy = class_accuracy(
+                    vgg.prob, train_labels)  # training accuracy
             tf.summary.scalar("training accuracy", train_accuracy)
 
             # Setup validation op
@@ -158,9 +208,14 @@ def train_vgg16(train_dir=None, validation_dir=None):
                 val_vgg = vgg16.Vgg16(
                     vgg16_npy_path=config.vgg16_weight_path,
                     fine_tune_layers=config.fine_tune_layers)
-                val_vgg.build(val_images, output_shape=config.output_shape)
+                val_vgg.build(val_images, output_shape=vgg_output)
                 # Calculate validation accuracy
-                val_accuracy = class_accuracy(val_vgg.prob, val_labels)
+                if reg_cost:
+                    val_res_output = tf.reshape(val_vgg.fc8, [config.validation_batch, 2, config.output_shape]) 
+                    val_arg_guesses = tf.cast(tf.reduce_sum(tf.squeeze(tf.argmax(val_res_output, axis=1)), reduction_indices=[1]), tf.int32)
+                    val_accuracy = tf.reduce_mean(tf.cast(tf.equal(val_arg_guesses, val_labels), tf.float32))
+                else:
+                    val_accuracy = class_accuracy(val_vgg.prob, val_labels)
                 tf.summary.scalar("validation accuracy", val_accuracy)
 
     # Set up summaries and saver
@@ -184,11 +239,6 @@ def train_vgg16(train_dir=None, validation_dir=None):
     # Start training loop
     np.save(out_dir + 'meta_info', config)
     step, losses = 0, []  # val_max = 0
-
-    if config.resume_training_from_model is not None:
-        print 'Resuming training from %s' % config.resume_training_from_model
-        saver.restore(sess, config.resume_training_from_model)
-
     try:
         # print response
         while not coord.should_stop():

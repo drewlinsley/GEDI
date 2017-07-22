@@ -88,7 +88,7 @@ def extract_tf_records_from_GEDI_tiffs():
         im_lists['val'], im_lists['train'] = sample_files(
             im_lists['train'], config.train_proportion, config.tvt_flags)
     if config.encode_time_of_death is not None:
-        death_timepoints = pd.read_csv(config.encode_time_of_death)[['plate_well_neuron','dead_tp']]
+        death_timepoints = pd.read_csv(config.encode_time_of_death)[['plate_well_neuron', 'dead_tp']]
         im_labels = {}
         for k, v in im_lists.iteritems():
             if k is not 'test':
