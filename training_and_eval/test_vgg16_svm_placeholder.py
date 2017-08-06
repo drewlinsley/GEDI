@@ -8,19 +8,15 @@ import pandas as pd
 from argparse import ArgumentParser
 from glob import glob
 from exp_ops.tf_fun import make_dir
-from exp_ops.plotting_fun import plot_accuracies, plot_std, plot_cms, plot_pr,\
-    plot_cost
 from exp_ops.preprocessing_GEDI_images import produce_patch
 from gedi_config import GEDIconfig
 from models import GEDI_vgg16_trainable_batchnorm_shared as vgg16
-from sklearn.pipeline import make_pipeline
-from sklearn.svm import LinearSVC
-from sklearn import preprocessing
-from sklearn.model_selection import cross_val_score
 from tqdm import tqdm
+from datetime import datetime
 
 
 def crop_center(img, crop_size):
+    """Center crop images."""
     x, y = img.shape[:2]
     cx, cy = crop_size
     startx = x // 2 - (cx // 2)
@@ -29,6 +25,7 @@ def crop_center(img, crop_size):
 
 
 def renormalize(img, max_value, min_value):
+    """Normalize images to [0, 1]."""
     return (img - min_value) / (max_value - min_value)
 
 
@@ -40,10 +37,14 @@ def image_batcher(
         config,
         training_max,
         training_min):
+    """Placeholder image/label batch loader."""
     for b in range(num_batches):
         next_image_batch = images[start:start + config.validation_batch]
         image_stack = []
-        label_stack = labels[start:start + config.validation_batch]
+        if labels is None:
+            label_stack = None
+        else:
+            label_stack = labels[start:start + config.validation_batch]
         for f in next_image_batch:
             # 1. Load image patch
             patch = produce_patch(
@@ -73,6 +74,7 @@ def image_batcher(
 
 
 def randomization_test(y, yhat, iterations=10000):
+    """Randomization test of difference of predicted accuracy from chance."""
     true_score = np.mean(y == yhat)
     perm_scores = np.zeros((iterations))
     lab_len = len(y)
@@ -83,28 +85,44 @@ def randomization_test(y, yhat, iterations=10000):
     return p_value
 
 
-# Evaluate your trained model on GEDI images
 def test_vgg16(
-        live_ims,
-        dead_ims,
         model_file,
+        trained_svm,
+        live_ims,
+        dead_ims=None,
         output_csv='prediction_file',
-        C=1e-3):
+        C=1e-3,
+        k_folds=10):
+    """Test an SVM you've trained on a new dataset."""
     config = GEDIconfig()
-    if image_dir is None:
+    if live_ims is None:
         raise RuntimeError(
-            'You need to supply a directory path to the images.')
+            'You need to supply a directory path to the live images.')
+    if dead_ims is None:
+        print 'Assuming all of your images are in the live_ims folder' + \
+            '-- will not derive labels to calculate accuracy.'
+    if not os.path.exists(trained_svm):
+        raise RuntimeError(
+            'Cannot find the trained svm model. Check the path you passed.')
 
-    live_files = glob(os.path.join(live_ims, '*%s' % config.raw_im_ext))
-    dead_files = glob(os.path.join(dead_ims, '*%s' % config.raw_im_ext))
-    combined_labels = np.concatenate((np.zeros(len(live_files)), np.ones(len(dead_files)))))
-    combined_files = np.concatenate((live_files, dead_files))
+    if live_ims is not None and dead_ims is not None:
+        live_files = glob(os.path.join(live_ims, '*%s' % config.raw_im_ext))
+        dead_files = glob(os.path.join(dead_ims, '*%s' % config.raw_im_ext))
+        combined_labels = np.concatenate((
+            np.zeros(len(live_files)),
+            np.ones(len(dead_files))))
+        combined_files = np.concatenate((live_files, dead_files))
+    else:
+        live_files = glob(os.path.join(live_ims, '*%s' % config.raw_im_ext))
+        combined_labels = None
+        combined_files = np.asarray(live_files)
     config = GEDIconfig()
     meta_file_pointer = os.path.join(
         model_file.split('/model')[0], 'train_maximum_value.npz')
     if not os.path.exists(meta_file_pointer):
         raise RuntimeError(
-            'Cannot find the training data meta file. Download this from the link described in the README.md.')
+            'Cannot find the training data meta file.' +
+            'Download this from the link described in the README.md.')
     meta_data = np.load(meta_file_pointer)
 
     # Prepare image normalization values
@@ -150,7 +168,8 @@ def test_vgg16(
     print '-' * 60
 
     if config.validation_batch > len(combined_files):
-        print 'Trimming validation_batch size to %s (same as # of files).' % len(combined_files)
+        print 'Trimming validation_batch size to %s (same as # of files).' % len(
+            combined_files)
         config.validation_batch = len(combined_files)
 
     for idx, c in tqdm(enumerate(ckpts), desc='Running checkpoints'):
@@ -182,7 +201,7 @@ def test_vgg16(
             sc, tyh = sess.run(
                 [scores, preds],
                 feed_dict=feed_dict)
-            dec_scores = np.append(dec_scores, sc)
+            dec_scores += [sc]
             yhat = np.append(yhat, tyh)
             y = np.append(y, label_batch)
             file_array = np.append(file_array, file_batch)
@@ -194,19 +213,42 @@ def test_vgg16(
             idx, time.time() - start_time)
     sess.close()
 
-    # Pass data through the classifier
-    with open(svm_model, 'rb') as fid:
-        gnb_loaded = cPickle.load(fid)
+    # Save everything
+    new_dt_string = re.split('\.', str(datetime.now()))[0].\
+        replace(' ', '_').replace(':', '_').replace('-', '_')
+    np.savez(
+        os.path.join(out_dir, '%s_validation_accuracies' % new_dt_string),
+        ckpt_yhat=ckpt_yhat,
+        ckpt_y=ckpt_y,
+        ckpt_scores=ckpt_scores,
+        ckpt_names=ckpts,
+        combined_files=ckpt_file_array)
 
-
-    # save the classifier
-    print 'Saving model to: %s' % output_svm
-    with open('%s.pkl' % output_svm, 'wb') as fid:
-        cPickle.dump(clf, fid)    
+    # Run SVM
+    clf = cPickle.load(open(trained_svm, 'rb'))
+    predictions = clf.predict(np.concatenate(dec_scores))
+    if combined_labels is not None:
+        mean_acc = np.mean(predictions == y)
+        p_value = randomization_test(y=y, yhat=predictions)
+        print 'SVM performance: mean accuracy = %s%%, p = %.5f' % (
+            mean_acc,
+            p_value)
+        df_col_label = 'true label'
+    else:
+        mean_acc, p_value = None, None
+        y = np.copy(yhat)
+        df_col_label = 'Dummy column (no labels supplied)'
+    np.savez(
+        os.path.join(out_dir, '%s_svm_test_data' % new_dt_string),
+        yhat=yhat,
+        y=y,
+        scores=dec_scores,
+        ckpts=ckpts,
+        p_value=p_value)
 
     # Also save a csv with item/guess pairs
     try:
-        trimmed_files = [re.split('/', x)[-1] for x in file_pointers]
+        trimmed_files = [re.split('/', x)[-1] for x in combined_files]
         trimmed_files = np.asarray(trimmed_files)
         dec_scores = np.asarray(dec_scores)
         yhat = np.asarray(yhat)
@@ -214,14 +256,14 @@ def test_vgg16(
             np.hstack((
                 trimmed_files.reshape(-1, 1),
                 yhat.reshape(-1, 1),
-                dec_scores.reshape(dec_scores.shape[0]//2, 2))),
-            columns=['files', 'guesses', 'score dead', 'score live'])
+                y.reshape(-1, 1))),
+            columns=['files', 'guesses', df_col_label])
         df.to_csv(os.path.join(out_dir, 'prediction_file.csv'))
         print 'Saved csv to: %s' % out_dir
     except:
-        print 'X'*60
+        print 'X' * 60
         print 'Could not save a spreadsheet of file info'
-        print 'X'*60
+        print 'X' * 60
 
 
 if __name__ == '__main__':
@@ -251,11 +293,11 @@ if __name__ == '__main__':
         default='prediction_file',
         help="Name of your prediction csv file.")
     parser.add_argument(
-        "--svm_model",
+        "--trained_svm",
         type=str,
         dest="svm_model",
-        default='output_svm',
-        help="Name of your svm model.")
+        default='trained_svm',
+        help="Directory pointer to your trained svm model.")
     parser.add_argument(
         "--C",
         type=float,

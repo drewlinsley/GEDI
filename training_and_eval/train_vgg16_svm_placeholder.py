@@ -8,8 +8,6 @@ import pandas as pd
 from argparse import ArgumentParser
 from glob import glob
 from exp_ops.tf_fun import make_dir
-from exp_ops.plotting_fun import plot_accuracies, plot_std, plot_cms, plot_pr,\
-    plot_cost
 from exp_ops.preprocessing_GEDI_images import produce_patch
 from gedi_config import GEDIconfig
 from models import GEDI_vgg16_trainable_batchnorm_shared as vgg16
@@ -17,11 +15,11 @@ from sklearn.pipeline import make_pipeline
 from sklearn.svm import LinearSVC
 from sklearn import preprocessing
 from sklearn.model_selection import cross_val_score
-from sklearn.utils import class_weight
 from tqdm import tqdm
 
 
 def crop_center(img, crop_size):
+    """Center crop images."""
     x, y = img.shape[:2]
     cx, cy = crop_size
     startx = x // 2 - (cx // 2)
@@ -30,6 +28,7 @@ def crop_center(img, crop_size):
 
 
 def renormalize(img, max_value, min_value):
+    """Normalize images to [0, 1]."""
     return (img - min_value) / (max_value - min_value)
 
 
@@ -41,6 +40,7 @@ def image_batcher(
         config,
         training_max,
         training_min):
+    """Placeholder image/label batch loader."""
     for b in range(num_batches):
         next_image_batch = images[start:start + config.validation_batch]
         image_stack = []
@@ -74,6 +74,7 @@ def image_batcher(
 
 
 def randomization_test(y, yhat, iterations=10000):
+    """Randomization test of difference of predicted accuracy from chance."""
     true_score = np.mean(y == yhat)
     perm_scores = np.zeros((iterations))
     lab_len = len(y)
@@ -91,7 +92,9 @@ def test_vgg16(
         model_file,
         svm_model='svm_model',
         output_csv='prediction_file',
-        C=1e-3):
+        C=1e-3,
+        k_folds=10):
+    """Train an SVM for your dataset on GEDI-model encodings."""
     config = GEDIconfig()
     if live_ims is None:
         raise RuntimeError(
@@ -157,7 +160,8 @@ def test_vgg16(
     print '-' * 60
 
     if config.validation_batch > len(combined_files):
-        print 'Trimming validation_batch size to %s (same as # of files).' % len(combined_files)
+        print 'Trimming validation_batch size to %s (same as # of files).' % len(
+            combined_files)
         config.validation_batch = len(combined_files)
 
     for idx, c in tqdm(enumerate(ckpts), desc='Running checkpoints'):
@@ -211,22 +215,30 @@ def test_vgg16(
         combined_files=ckpt_file_array)
 
     # Run SVM
-    cw = class_weight.compute_class_weight(
-        'balanced',
-        np.unique(ckpt_y),
-        ckpt_y[0])
     svm = LinearSVC(C=C, dual=False, class_weight='balanced')
     clf = make_pipeline(preprocessing.StandardScaler(), svm)
-    cv_performance = cross_val_score(clf, np.concatenate(dec_scores), y, cv=10)
+    cv_performance = cross_val_score(
+        clf, np.concatenate(dec_scores), y, cv=k_folds)
+    sd = np.std(cv_performance)
+    predictions = clf.predict(np.concatenate(dec_scores))
+    p_value = randomization_test(y=y, yhat=predictions)
+    print '%s-fold SVM performance: mean accuracy = %s%% (SD = %s, SE = %s), p = %.5f' % (
+        k_folds,
+        np.mean(cv_performance * 100),
+        sd,
+        sd / np.sqrt(k_folds),
+        p_value)
     np.savez(
         os.path.join(out_dir, 'svm_data'),
-        yhat=yhat,
+        yhat=predictions,
         y=y,
         scores=dec_scores,
         ckpts=ckpts,
-        cv_performance=cv_performance)
-    p_value = randomization_test(y=y, yhat=yhat)
-    print 'SVM performance: %s%%, p = %.5f' % (np.mean(cv_performance * 100), 1 - p_value)
+        cv_performance=cv_performance,
+        sd=sd,
+        p_value=p_value,
+        k_folds=k_folds,
+        C=C)
 
     # save the classifier
     print 'Saving model to: %s' % svm_model
@@ -248,9 +260,9 @@ def test_vgg16(
         df.to_csv(os.path.join(out_dir, 'prediction_file.csv'))
         print 'Saved csv to: %s' % out_dir
     except:
-        print 'X'*60
+        print 'X' * 60
         print 'Could not save a spreadsheet of file info'
-        print 'X'*60
+        print 'X' * 60
 
 
 if __name__ == '__main__':
@@ -284,7 +296,7 @@ if __name__ == '__main__':
         type=str,
         dest="svm_model",
         default='output_svm',
-        help="Name of your svm model.")
+        help="Name of the svm model that will be saved.")
     parser.add_argument(
         "--C",
         type=float,
