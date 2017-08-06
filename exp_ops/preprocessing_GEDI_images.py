@@ -80,9 +80,9 @@ def produce_patch(
     """For multithread"""
     with TiffFile(p) as tif:
         im = tif.asarray()
-        try:
+        if isinstance(im, list):
             im = im[channel]
-        except:
+        else:
             print 'Warning: Image has no slices. If a single time point was passed, ignore.'
     patch = get_patch(im, panel).astype(np.float32)
     if max_value is None:
