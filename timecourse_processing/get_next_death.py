@@ -31,23 +31,10 @@ def death_point(df, live_thresh=0.05, dead_thresh=0.05):
         it_row = mat_df[r_idx]
         live_log = it_row < live_thresh
         dead_log = it_row > dead_thresh
-        if live_log.sum():
-            live_find[r_idx] = np.where(live_log)[0][0] + 1
+        if dead_log[0]:  # Already dead, exclude
+            dead_find[r_idx] = 100
         else:
-            live_find[r_idx] = 0
-        if dead_log.sum():
-            when_to_die = np.where(dead_log)[0][0]
-            if when_to_die == 2:  # Cell is either dead or about to die
-                dead_find[r_idx] = 2
-            elif when_to_die == 1:
-                dead_find[r_idx] = 1
-            elif when_to_die == 0:
-                dead_find[r_idx] = 0
-            else:
-                dead_find[r_idx] = 100  # Any cells 
-        else:
-            # dead_find[r_idx] = 2  # This cell is healthy for a while
-            dead_find[r_idx] = 100  # After talking to J, this could be hurting us
+            dead_find[r_idx] = int(dead_log[1])  # Binary dead/live next timepoint 
     new_df['live_tp'] = live_find
     new_df['dead_tp'] = dead_find
     return new_df

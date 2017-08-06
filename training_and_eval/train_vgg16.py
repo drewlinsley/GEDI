@@ -11,6 +11,7 @@ from exp_ops.tf_fun import make_dir, softmax_cost, fine_tune_prepare_layers, \
 from gedi_config import GEDIconfig
 # from models import GEDI_vgg16_trainable_batchnorm_shared as vgg16
 from models import baseline_vgg16 as vgg16
+# from models import small_cnn as vgg16
 import pandas as pd
 from sklearn.utils import class_weight
 
@@ -122,11 +123,11 @@ def train_vgg16(train_dir=None, validation_dir=None):
     # Prepare model on GPU
     with tf.device('/gpu:0'):
         with tf.variable_scope('cnn') as scope:
-            if config.output_shape > 2:  # Hardcoded fix for timecourse pred
-                reg_cost = True
+            if config.ordinal_classification == 'ordinal':  # config.output_shape > 2:  # Hardcoded fix for timecourse pred
                 vgg_output = config.output_shape * 2
-            else:
-                reg_cost = False
+            elif config.ordinal_classification == 'regression':
+                vgg_output = 1
+            elif config.ordinal_classification is None:
                 vgg_output = config.output_shape
             vgg = vgg16.Vgg16(
                 vgg16_npy_path=config.vgg16_weight_path,
@@ -137,7 +138,7 @@ def train_vgg16(train_dir=None, validation_dir=None):
                 train_mode=train_mode, batchnorm=config.batchnorm_layers)
 
             # Prepare the cost function
-            if reg_cost:
+            if config.ordinal_classification == 'ordinal':
                 # Encode y w/ k-hot and yhat w/ sigmoid ce. units capture dist.
                 enc = tf.concat(
                     [tf.reshape(
@@ -151,14 +152,20 @@ def train_vgg16(train_dir=None, validation_dir=None):
                 res_output = tf.reshape(vgg.fc8, [config.train_batch, 2, config.output_shape])
                 split_logs = tf.split(res_output, config.output_shape, axis=2)
                 if config.balance_cost:
-                    cost = tf.add_n([tf.nn.sparse_softmax_cross_entropy_with_logits(
-                        labels=tf.cast(s, tf.int32),
-                        logits=l) * r for s, l, r in zip(split_labs, split_logs, ratio)])
+                    cost = tf.add_n([tf.nn.softmax_cross_entropy_with_logits(
+                        labels=tf.one_hot(tf.cast(tf.squeeze(s), tf.int32), 2),
+                        logits=tf.squeeze(l)) * r for s, l, r in zip(split_labs, split_logs, ratio)])
                 else:
                     cost = tf.add_n([tf.nn.softmax_cross_entropy_with_logits(
-                        labels=tf.cast(s, tf.int32),
-                        logits=l) for s, l in zip(split_labs, split_logs)])
+                        labels=tf.one_hot(tf.cast(tf.squeeze(s), tf.int32), 2),
+                        logits=tf.squeeze(l)) for s, l in zip(split_labs, split_logs)])
                 cost = tf.reduce_mean(cost)
+            elif config.ordinal_classification == 'regression':
+                if config.balance_cost:
+                    weight_vec = tf.gather(train_labels, ratio)
+                    cost = tf.reduce_mean(tf.pow((vgg.fc8) - tf.cast(train_labels, tf.float32), 2) * weight_vec)
+                else:
+                    cost = tf.nn.l2_loss((vgg.fc8) - tf.cast(train_labels, tf.float32))
             else:
                 if config.balance_cost:
                     cost = softmax_cost(
@@ -193,9 +200,11 @@ def train_vgg16(train_dir=None, validation_dir=None):
                     tf.train.GradientDescentOptimizer,
                     config.hold_lr, config.new_lr)
 
-            if reg_cost:
+            if config.ordinal_classification == 'ordinal':
                 arg_guesses = tf.cast(tf.reduce_sum(tf.squeeze(tf.argmax(res_output, axis=1)), reduction_indices=[1]), tf.int32)
                 train_accuracy = tf.reduce_mean(tf.cast(tf.equal(arg_guesses, train_labels), tf.float32)) 
+            elif config.ordinal_classification == 'regression':
+                train_accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.cast(tf.round(vgg.prob), tf.int32), train_labels), tf.float32))
             else:
                 train_accuracy = class_accuracy(
                     vgg.prob, train_labels)  # training accuracy
@@ -210,10 +219,12 @@ def train_vgg16(train_dir=None, validation_dir=None):
                     fine_tune_layers=config.fine_tune_layers)
                 val_vgg.build(val_images, output_shape=vgg_output)
                 # Calculate validation accuracy
-                if reg_cost:
+                if config.ordinal_classification == 'ordinal':
                     val_res_output = tf.reshape(val_vgg.fc8, [config.validation_batch, 2, config.output_shape]) 
                     val_arg_guesses = tf.cast(tf.reduce_sum(tf.squeeze(tf.argmax(val_res_output, axis=1)), reduction_indices=[1]), tf.int32)
                     val_accuracy = tf.reduce_mean(tf.cast(tf.equal(val_arg_guesses, val_labels), tf.float32))
+                elif config.ordinal_classification == 'regression':
+                    val_accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.cast(tf.round(val_vgg.prob), tf.int32), val_labels), tf.float32))
                 else:
                     val_accuracy = class_accuracy(val_vgg.prob, val_labels)
                 tf.summary.scalar("validation accuracy", val_accuracy)
@@ -249,7 +260,7 @@ def train_vgg16(train_dir=None, validation_dir=None):
             duration = time.time() - start_time
             assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
 
-            if step % 1000 == 0:
+            if step % config.validation_steps == 0:
                 if validation_data is not False:
                     _, val_acc = sess.run([train_op, val_accuracy])
                 else:
