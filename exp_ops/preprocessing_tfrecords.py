@@ -266,13 +266,17 @@ def write_label_file(labels_to_class_names, dataset_dir,
 def find_timepoint(
         images,
         data,
+        keep_experiments=None, 
         label_column='plate_well_neuron',
         remove_prefix='bs_',
         remove_thresh=10):  # exclusion is some large value
     pre_len = len(images)
     images = [im for im in images if remove_prefix not in im]
+    if keep_experiments is not None:
+        filter_list = keep_experiments['plate+AF8-well+AF8-neuron'].as_matrix()
+        images = [im for im in images if im.split('/')[-1].split('_')[1] in filter_list]
     post_len = len(images)
-    print 'Removed %s bs images (%s remaining).' % ((
+    print 'Removed %s images (%s remaining).' % ((
         pre_len - post_len), post_len)
     data_labels = data[label_column]
     data_labels = data_labels.str.replace('^(.*?)_', '')
