@@ -89,10 +89,11 @@ def extract_tf_records_from_GEDI_tiffs():
             im_lists['train'], config.train_proportion, config.tvt_flags)
     if config.encode_time_of_death is not None:
         death_timepoints = pd.read_csv(config.encode_time_of_death)[['plate_well_neuron', 'dead_tp']]
+        keep_experiments = pd.read_csv(config.time_of_death_experiments)
         im_labels = {}
         for k, v in im_lists.iteritems():
             if k is not 'test':
-                proc_ims, proc_labels = find_timepoint(images=v, data=death_timepoints)
+                proc_ims, proc_labels = find_timepoint(images=v, data=death_timepoints, keep_experiments=keep_experiments)
                 im_labels[k] = proc_labels
                 im_lists[k] = proc_ims
                 df = pd.DataFrame(np.vstack((proc_ims, proc_labels)).transpose(), columns=['image', 'timepoint'])
