@@ -32,9 +32,9 @@ def death_point(df, live_thresh=0.05, dead_thresh=0.05):
         live_log = it_row < live_thresh
         dead_log = it_row > dead_thresh
         if dead_log[0]:  # Already dead, exclude
-            dead_find[r_idx] = 100
+            dead_find[r_idx] = -999.
         else:
-            dead_find[r_idx] = int(dead_log[1])  # Binary dead/live next timepoint 
+            dead_find[r_idx] = df_copy['1'].iloc[r_idx]  # int(dead_log[1])  # Binary dead/live next timepoint 
     new_df['live_tp'] = live_find
     new_df['dead_tp'] = dead_find
     return new_df

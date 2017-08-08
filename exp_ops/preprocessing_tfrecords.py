@@ -168,8 +168,13 @@ def features_to_dict(
         ratio_placeholder=-1.):
     if ratio is None:
         ratio = ratio_placeholder
+    if isinstance(label, int):
+        label = int64_feature(label)
+    else:
+        label = floats_feature(label)
+
     return {  # Go ahead and store a None ratio if necessary
-        'label': int64_feature(label),
+        'label': label,
         'image': bytes_feature(image.tostring()),
         'filename': bytes_feature(filename),
         'ratio': floats_feature(ratio)
@@ -269,7 +274,7 @@ def find_timepoint(
         keep_experiments=None, 
         label_column='plate_well_neuron',
         remove_prefix='bs_',
-        remove_thresh=10):  # exclusion is some large value
+        remove_thresh=-900):  # exclusion is some large value
     pre_len = len(images)
     images = [im for im in images if remove_prefix not in im]
     if keep_experiments is not None:
@@ -292,8 +297,8 @@ def find_timepoint(
         cross_ref = data_labels.str.match(probe_name)
         mask = (len_ref == len(probe_name)) & cross_ref
         if mask.sum() == 1:
-            it_data = data.loc[mask]['dead_tp'].as_matrix()[0].astype(int)
-            if it_data < remove_thresh:
+            it_data = data.loc[mask]['dead_tp'].as_matrix()[0]  # .astype(int)
+            if it_data > remove_thresh:
                 im_timepoints[imidx] = it_data
         elif mask.sum() > 1:
             print 'Found multiple entries??'
