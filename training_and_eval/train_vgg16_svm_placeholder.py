@@ -109,6 +109,9 @@ def test_vgg16(
         np.zeros(len(live_files)),
         np.ones(len(dead_files))))
     combined_files = np.concatenate((live_files, dead_files))
+    if len(combined_files) == 0:
+        raise RuntimeError('Could not find any files. Check your image path.')
+
     config = GEDIconfig()
     meta_file_pointer = os.path.join(
         model_file.split('/model')[0], 'train_maximum_value.npz')
@@ -176,7 +179,9 @@ def test_vgg16(
         # Set up exemplar threading
         saver.restore(sess, c)
         start_time = time.time()
-        num_batches = len(combined_files) // config.validation_batch
+        num_batches = np.floor(
+            len(combined_files) / float(
+                config.validation_batch)).astype(int)
         for image_batch, label_batch, file_batch in tqdm(
                 image_batcher(
                     start=0,

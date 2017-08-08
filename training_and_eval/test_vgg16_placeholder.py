@@ -84,7 +84,11 @@ def test_vgg16(image_dir, model_file, output_csv='prediction_file'):
         raise RuntimeError(
             'You need to supply a directory path to the images.')
 
-    combined_files = np.asarray(glob(os.path.join(image_dir, '*%s' % config.raw_im_ext)))
+    combined_files = np.asarray(
+        glob(os.path.join(image_dir, '*%s' % config.raw_im_ext)))
+    if len(combined_files) == 0:
+        raise RuntimeError('Could not find any files. Check your image path.')
+
     config = GEDIconfig()
     meta_file_pointer = os.path.join(
         model_file.split('/model')[0], 'train_maximum_value.npz')
@@ -151,7 +155,9 @@ def test_vgg16(image_dir, model_file, output_csv='prediction_file'):
         # Set up exemplar threading
         saver.restore(sess, c)
         start_time = time.time()
-        num_batches = len(combined_files) // config.validation_batch
+        num_batches = np.floor(
+            len(combined_files) / float(
+                config.validation_batch)).astype(int)
         for image_batch, file_batch in tqdm(
                 image_batcher(
                     start=0,
@@ -235,7 +241,7 @@ if __name__ == '__main__':
         "--image_dir",
         type=str,
         dest="image_dir",
-        default='/Users/drewlinsley/Documents/GEDI_images/human_bs',
+        default='/Users/drewlinsley/Desktop/multi',
         help="Directory containing your .tiff images.")
     parser.add_argument(
         "--model_file",
