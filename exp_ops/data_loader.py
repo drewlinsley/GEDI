@@ -152,6 +152,9 @@ def read_and_decode(
         normalize=False):
     reader = tf.TFRecordReader()
     _, serialized_example = reader.read(filename_queue)
+    print 'Warning read_and_decode labels changed for regression.'
+    import ipdb;ipdb.set_trace()
+    print 'Add a field for "ratio" -- we should pass this for the prediction models.'
     if return_filename:
         features = tf.parse_single_example(
             serialized_example,
