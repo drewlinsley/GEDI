@@ -149,30 +149,24 @@ def read_and_decode(
         min_value=None,
         num_channels=2,
         return_filename=False,
+        return_gedi=False,
         normalize=False):
     reader = tf.TFRecordReader()
     _, serialized_example = reader.read(filename_queue)
-    print 'Warning read_and_decode labels changed for regression.'
-    import ipdb;ipdb.set_trace()
-    print 'Add a field for "ratio" -- we should pass this for the prediction models.'
-    if return_filename:
-        features = tf.parse_single_example(
-            serialized_example,
-            features={
-                   'label': tf.FixedLenFeature([], tf.int64),
-                   'image': tf.FixedLenFeature([], tf.string),
-                   'filename': tf.FixedLenFeature([], tf.string)
-                }
-            )
-    else:
-        features = tf.parse_single_example(
-            serialized_example,
-            features={
-                   'label': tf.FixedLenFeature([], tf.int64),
-                   'image': tf.FixedLenFeature([], tf.string),
-                }
-            )
+    features={
+        'label': tf.FixedLenFeature([], tf.int64),
+        'image': tf.FixedLenFeature([], tf.string)
+    }
 
+    if return_filename:
+        features['filename'] = tf.FixedLenFeature([], tf.string)
+
+    if return_gedi:
+        features['gedi'] = tf.FixedLenFeature([], tf.string)
+
+    features = tf.parse_single_example(
+        serialized_example,
+        features=features)
 
     # Convert from a scalar string tensor (whose single string has
     image = tf.decode_raw(features['image'], tf.float32)
@@ -252,9 +246,17 @@ def read_and_decode(
     # Convert label from a scalar uint8 tensor to an int32 scalar.
     label = tf.cast(features['label'], tf.int32)
 
+    if return_gedi:
+        gedi_image = tf.decode_raw(features['gedi'], tf.float32)
+        res_image = tf.reshape(gedi_image, np.asarray(im_size)[[2, 0, 1]])
+        gedi_image = tf.transpose(res_image, [2, 1, 0])
+        gedi_image /= max_value
+
     if return_filename:
         filename = tf.decode_raw(features['filename'], tf.string)
         return image, label, filename
+    elif return_gedi:
+        return image, label, gedi_image
     else:
         return image, label
 
@@ -269,6 +271,7 @@ def inputs(
         max_value=None,
         min_value=None,
         return_filename=False,
+        return_gedi=False,
         normalize=False):
     with tf.name_scope('input'):
         filename_queue = tf.train.string_input_producer(
@@ -296,6 +299,26 @@ def inputs(
                 min_after_dequeue=1000)
 
             return images, sparse_labels, filenames
+        elif return_gedi:
+            image, label, gedi_images = read_and_decode(
+                filename_queue=filename_queue,
+                im_size=im_size,
+                model_input_shape=model_input_shape,
+                train=train,
+                max_value=max_value,
+                min_value=min_value,
+                return_filename=return_filename,
+                normalize=normalize,
+                return_gedi=return_gedi)
+
+            images, sparse_labels, gedi_images = tf.train.shuffle_batch(
+                [image, label, gedi_images],
+                batch_size=batch_size,
+                num_threads=2,
+                capacity=1000 + 3 * batch_size,
+                min_after_dequeue=1000)
+
+            return images, sparse_labels, gedi_images
         else:
             image, label = read_and_decode(
                 filename_queue=filename_queue,
