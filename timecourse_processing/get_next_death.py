@@ -15,7 +15,11 @@ def load_data(csv_file, starting_timepoint=0):
     return df
 
 
-def death_point(df, live_thresh=0.05, dead_thresh=0.05):
+def death_point(
+        df,
+        live_thresh=0.05,
+        dead_thresh=0.05,
+        mask_timepoint_value=-999.):
     df_copy = df.copy(deep=True)
     new_df = pd.concat(
         [df_copy['index'], df_copy['plate_well_neuron']], axis=1)
@@ -32,7 +36,7 @@ def death_point(df, live_thresh=0.05, dead_thresh=0.05):
         live_log = it_row < live_thresh
         dead_log = it_row > dead_thresh
         if dead_log[0]:  # Already dead, exclude
-            dead_find[r_idx] = -999.
+            dead_find[r_idx] = mask_timepoint_value
         else:
             # dead_find[r_idx] = df_copy['1'].iloc[r_idx]  # int(dead_log[1])  # Binary dead/live next timepoint 
             dead_find[r_idx] = int(dead_log[1])  # Binary dead/live next timepoint 

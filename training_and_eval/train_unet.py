@@ -14,6 +14,12 @@ import pandas as pd
 from sklearn.utils import class_weight
 
 
+def min_max_norm(x, eps=0.001):
+    min_val = tf.reduce_min(x, reduction_indices=[1, 2, 3], keep_dims=True)
+    max_val = tf.reduce_max(x, reduction_indices=[1, 2, 3], keep_dims=True)
+    return (x - min_val) / (max_val - min_val + eps)
+
+
 # Train or finetune a vgg16 for the GEDI dataset
 def train_vgg16(train_dir=None, validation_dir=None):
     config = GEDIconfig()
@@ -52,9 +58,10 @@ def train_vgg16(train_dir=None, validation_dir=None):
     if config.encode_time_of_death:
         tod = pd.read_csv(config.encode_time_of_death)
         tod_data = tod['dead_tp'].as_matrix()
-        mask = np.isnan(tod_data).astype(int) + (tod['plate_well_neuron'] == 'empty').as_matrix().astype(int)
+        mask = np.isnan(tod_data).astype(int) + (
+            tod['plate_well_neuron'] == 'empty').as_matrix().astype(int)
         tod_data = tod_data[mask == 0]
-        tod_data = tod_data[tod_data < 10]  # throw away values have a high number
+        tod_data = tod_data[tod_data > config.mask_timepoint_value]
         config.output_shape = len(np.unique(tod_data))
         ratio = class_weight.compute_class_weight(
             'balanced',
@@ -106,7 +113,8 @@ def train_vgg16(train_dir=None, validation_dir=None):
             train=config.data_augmentations,
             num_epochs=config.epochs,
             normalize=config.normalize,
-            return_gedi=True)
+            return_gedi=config.include_GEDI_in_tfrecords,
+            return_extra_gfp=config.extra_image)
         val_images, val_labels, val_gedi_images = inputs(
             validation_data,
             config.validation_batch,
@@ -116,16 +124,21 @@ def train_vgg16(train_dir=None, validation_dir=None):
             min_value=min_value,
             num_epochs=config.epochs,
             normalize=config.normalize,
-            return_gedi=True)
+            return_gedi=config.include_GEDI_in_tfrecords,
+            return_extra_gfp=config.extra_image)
+        if config.include_GEDI_in_tfrecords:
+            extra_im_name = 'GEDI at current timepoint'
+        else:
+            extra_im_name = 'next gfp timepoint'
         tf.summary.image('train images', train_images)
         tf.summary.image('validation images', val_images)
-        tf.summary.image('train gedi images', train_gedi_images)
-        tf.summary.image('validation gedi images', val_gedi_images)
+        tf.summary.image('train %s' % extra_im_name, train_gedi_images)
+        tf.summary.image('validation %s' % extra_im_name, val_gedi_images)
 
     # Prepare model on GPU
     with tf.device('/gpu:0'):
         with tf.variable_scope('cnn') as scope:
-            if config.ordinal_classification == 'ordinal':  # config.output_shape > 2:  # Hardcoded fix for timecourse pred
+            if config.ordinal_classification == 'ordinal':
                 vgg_output = config.output_shape * 2
             elif config.ordinal_classification == 'regression':
                 vgg_output = 1
@@ -133,9 +146,30 @@ def train_vgg16(train_dir=None, validation_dir=None):
                 vgg_output = config.output_shape
             vgg = vgg16.model_struct()
             train_mode = tf.get_variable(name='training', initializer=True)
+
+            # Mask NAN images from loss
+            image_nan = tf.reduce_sum(
+                tf.cast(tf.is_nan(train_images), tf.float32),
+                reduction_indices=[1, 2, 3])
+            gedi_nan = tf.reduce_sum(
+                tf.cast(tf.is_nan(train_gedi_images), tf.float32),
+                reduction_indices=[1, 2, 3],
+                keep_dims=True)
+            image_mask = tf.cast(tf.equal(image_nan, 0.), tf.float32)
+            gedi_nan = tf.cast(tf.equal(gedi_nan, 0.), tf.float32)
+            train_images = tf.where(
+                tf.is_nan(train_images),
+                tf.zeros_like(train_images),
+                train_images)
+            train_gedi_images = tf.where(
+                tf.is_nan(train_gedi_images),
+                tf.zeros_like(train_gedi_images),
+                train_gedi_images)
             vgg.build(
                 train_images, output_shape=vgg_output,
                 train_mode=train_mode, batchnorm=config.batchnorm_layers)
+            train_gedi_images = min_max_norm(train_gedi_images)
+            vgg.deconv_output = min_max_norm(vgg.deconv_output)
 
             # Prepare the cost function
             if config.ordinal_classification == 'ordinal':
@@ -148,40 +182,56 @@ def train_vgg16(train_dir=None, validation_dir=None):
                 enc_train_labels = tf.cast(tf.greater_equal(
                     enc,
                     tf.expand_dims(train_labels, axis=1)), tf.float32)
-                split_labs = tf.split(enc_train_labels, config.output_shape, axis=1)
-                res_output = tf.reshape(vgg.output, [config.train_batch, 2, config.output_shape])
+                split_labs = tf.split(
+                    enc_train_labels,
+                    config.output_shape,
+                    axis=1)
+                res_output = tf.reshape(
+                    vgg.output,
+                    [config.train_batch, 2, config.output_shape])
                 split_logs = tf.split(res_output, config.output_shape, axis=2)
                 if config.balance_cost:
                     cost = tf.add_n([tf.nn.softmax_cross_entropy_with_logits(
                         labels=tf.one_hot(tf.cast(tf.squeeze(s), tf.int32), 2),
-                        logits=tf.squeeze(l)) * r for s, l, r in zip(split_labs, split_logs, ratio)])
+                        logits=tf.squeeze(l)) * r for s, l, r in zip(
+                        split_labs, split_logs, ratio)])
                 else:
                     cost = tf.add_n([tf.nn.softmax_cross_entropy_with_logits(
                         labels=tf.one_hot(tf.cast(tf.squeeze(s), tf.int32), 2),
-                        logits=tf.squeeze(l)) for s, l in zip(split_labs, split_logs)])
+                        logits=tf.squeeze(l)) for s, l in zip(
+                        split_labs, split_logs)])
                 cost = tf.reduce_mean(cost)
             elif config.ordinal_classification == 'regression':
                 if config.balance_cost:
                     weight_vec = tf.gather(train_labels, ratio)
-                    cost = tf.reduce_mean(tf.pow((vgg.output) - tf.cast(train_labels, tf.float32), 2) * weight_vec)
+                    cost = tf.reduce_mean(
+                        tf.pow((
+                            vgg.output) - tf.cast(train_labels, tf.float32),
+                            2) * weight_vec)
                 else:
-                    cost = tf.nn.l2_loss((vgg.output) - tf.cast(train_labels, tf.float32))
+                    cost = tf.nn.l2_loss(
+                        (vgg.output) - tf.cast(train_labels, tf.float32))
             else:
                 if config.balance_cost:
                     cost = softmax_cost(
                         vgg.output,
                         train_labels,
                         ratio=ratio,
-                        flip_ratio=flip_ratio)
+                        flip_ratio=flip_ratio,
+                        mask=image_mask)
                 else:
-                    cost = softmax_cost(vgg.output, train_labels)
+                    cost = softmax_cost(
+                        vgg.output,
+                        train_labels,
+                        mask=image_mask)
             class_loss = cost
             tf.summary.scalar("cce cost", cost)
 
             # GEDI loss
-            gedi_loss = tf.nn.l2_loss(vgg.deconv_output - train_gedi_images) 
-            tf.summary.scalar("gedi cost", gedi_loss)
-            cost += (0.1 * gedi_loss)
+            gedi_loss = tf.nn.l2_loss(
+                gedi_nan * (vgg.deconv_output - train_gedi_images))
+            tf.summary.scalar("%s cost" % extra_im_name, gedi_loss)
+            cost += (0.01 * gedi_loss)
 
             # Weight decay
             if config.wd_layers is not None:
@@ -196,14 +246,29 @@ def train_vgg16(train_dir=None, validation_dir=None):
             # Optimize
             train_op = tf.train.AdamOptimizer(config.new_lr).minimize(cost)
             if config.ordinal_classification == 'ordinal':
-                arg_guesses = tf.cast(tf.reduce_sum(tf.squeeze(tf.argmax(res_output, axis=1)), reduction_indices=[1]), tf.int32)
-                train_accuracy = tf.reduce_mean(tf.cast(tf.equal(arg_guesses, train_labels), tf.float32)) 
+                arg_guesses = tf.cast(
+                    tf.reduce_sum(
+                        tf.squeeze(
+                            tf.argmax(
+                                res_output, axis=1)),
+                        reduction_indices=[1]), tf.int32)
+                train_accuracy = tf.reduce_mean(
+                    tf.cast(tf.equal(arg_guesses, train_labels), tf.float32))
             elif config.ordinal_classification == 'regression':
-                train_accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.cast(tf.round(vgg.prob), tf.int32), train_labels), tf.float32))
+                train_accuracy = tf.reduce_mean(
+                    tf.cast(
+                        tf.equal(
+                            tf.cast(
+                                tf.round(vgg.prob), tf.int32),
+                            train_labels),
+                        tf.float32))
             else:
                 train_accuracy = class_accuracy(
                     vgg.prob, train_labels)  # training accuracy
             tf.summary.scalar("training accuracy", train_accuracy)
+            tf.summary.image(
+                "training prediction %s" % extra_im_name,
+                vgg.deconv_output)
 
             # Setup validation op
             if validation_data is not False:
@@ -214,16 +279,39 @@ def train_vgg16(train_dir=None, validation_dir=None):
                 val_vgg.build(val_images, output_shape=vgg_output)
                 # Calculate validation accuracy
                 if config.ordinal_classification == 'ordinal':
-                    val_res_output = tf.reshape(val_vgg.output, [config.validation_batch, 2, config.output_shape]) 
-                    val_arg_guesses = tf.cast(tf.reduce_sum(tf.squeeze(tf.argmax(val_res_output, axis=1)), reduction_indices=[1]), tf.int32)
-                    val_accuracy = tf.reduce_mean(tf.cast(tf.equal(val_arg_guesses, val_labels), tf.float32))
+                    val_res_output = tf.reshape(
+                        val_vgg.output,
+                        [config.validation_batch, 2, config.output_shape])
+                    val_arg_guesses = tf.cast(
+                        tf.reduce_sum(
+                            tf.squeeze(
+                                tf.argmax(val_res_output, axis=1)),
+                            reduction_indices=[1]),
+                        tf.int32)
+                    val_accuracy = tf.reduce_mean(
+                        tf.cast(
+                            tf.equal(val_arg_guesses, val_labels),
+                            tf.float32))
                 elif config.ordinal_classification == 'regression':
-                    val_accuracy = tf.reduce_mean(tf.cast(tf.equal(tf.cast(tf.round(val_vgg.prob), tf.int32), val_labels), tf.float32))
+                    val_accuracy = tf.reduce_mean(
+                        tf.cast(
+                            tf.equal(
+                                tf.cast(
+                                    tf.round(val_vgg.prob), tf.int32),
+                                val_labels), tf.float32))
                 else:
                     val_accuracy = class_accuracy(val_vgg.prob, val_labels)
-                val_gedi_loss = tf.nn.l2_loss(val_vgg.deconv_output - val_gedi_images)
+                train_gedi_images = min_max_norm(val_gedi_images)
+                vgg.deconv_output = min_max_norm(val_vgg.deconv_output)
+                val_gedi_loss = tf.nn.l2_loss(
+                    val_vgg.deconv_output - val_gedi_images)
                 tf.summary.scalar("validation accuracy", val_accuracy)
-                tf.summary.scalar("validation gedi", val_gedi_loss)
+                tf.summary.scalar(
+                    "validation %s" % extra_im_name,
+                    val_gedi_loss)
+                tf.summary.image(
+                    "validation prediction %s" % extra_im_name,
+                    val_vgg.deconv_output)
 
     # Set up summaries and saver
     saver = tf.train.Saver(
@@ -250,15 +338,17 @@ def train_vgg16(train_dir=None, validation_dir=None):
         # print response
         while not coord.should_stop():
             start_time = time.time()
-            _, loss_value, train_acc, train_gedi_loss, train_class_loss, trgedi, trgfp = sess.run(
-                [train_op, cost, train_accuracy, gedi_loss, class_loss, train_gedi_images, train_images])
+            _, loss_value, train_acc, train_gedi_loss, train_class_loss, trgedi, trgfp, trdeconv, train_class_pred = sess.run(
+                [train_op, cost, train_accuracy, gedi_loss, class_loss, train_gedi_images, train_images, vgg.deconv_output, vgg.prob])
             losses.append(loss_value)
             duration = time.time() - start_time
+            if np.isnan(loss_value).sum():
+                import ipdb;ipdb.set_trace()
             assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
 
             if step % config.validation_steps == 0:
                 if validation_data is not False:
-                    _, val_acc = sess.run([train_op, val_accuracy])
+                    _, val_acc, val_gedi_loss_val = sess.run([train_op, val_accuracy, val_gedi_loss])
                 else:
                     val_acc -= 1  # Store every checkpoint
 
@@ -270,12 +360,15 @@ def train_vgg16(train_dir=None, validation_dir=None):
                 format_str = (
                     '%s: step %d, loss = %.2f (%.1f examples/sec; '
                     '%.3f sec/batch) | Training accuracy = %s | '
-                    'Training GEDI = %s | Training class loss = %s | Validation accuracy = %s'
-                    'Validation GEDI = %s | logdir = %s')
+                    'Training %s = %s | Training class loss = %s | '
+                    'Validation accuracy = %s | Validation %s = %s | '
+                    'logdir = %s')
                 print (format_str % (
                     datetime.now(), step, loss_value,
                     config.train_batch / duration, float(duration),
-                    train_acc, train_gedi_loss, train_class_loss, val_acc, val_gedi_loss, summary_dir))
+                    train_acc, extra_im_name, train_gedi_loss,
+                    train_class_loss, val_acc, extra_im_name,
+                    val_gedi_loss_val, summary_dir))
 
                 # Save the model checkpoint if it's the best yet
                 if 1:  # val_acc >= val_max:
@@ -290,10 +383,12 @@ def train_vgg16(train_dir=None, validation_dir=None):
                 # Training status
                 format_str = ('%s: step %d, loss = %.2f (%.1f examples/sec; '
                               '%.3f sec/batch) | Training accuracy = %s | '
-                              'Training GEDI = %s')
+                              'Training %s = %s | Training class loss = %s')
                 print (format_str % (datetime.now(), step, loss_value,
                                      config.train_batch / duration,
-                                     float(duration), train_acc, train_gedi_loss))
+                                     float(duration), train_acc,
+                                     extra_im_name, train_gedi_loss,
+                                     train_class_loss))
             # End iteration
             step += 1
 

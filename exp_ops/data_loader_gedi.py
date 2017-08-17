@@ -199,10 +199,11 @@ def read_and_decode(
         num_channels=2,
         return_filename=False,
         return_gedi=False,
+        return_extra_gfp=False,
         normalize=False):
     reader = tf.TFRecordReader()
     _, serialized_example = reader.read(filename_queue)
-    features={
+    features = {
         'label': tf.FixedLenFeature([], tf.int64),
         'image': tf.FixedLenFeature([], tf.string)
     }
@@ -212,6 +213,10 @@ def read_and_decode(
 
     if return_gedi:
         features['gedi'] = tf.FixedLenFeature([], tf.string)
+
+    if return_extra_gfp:
+        extra_gfp_name = 'image_1'  # TODO: Generalize this API (coordinate w/ preprocessing).
+        features[extra_gfp_name] = tf.FixedLenFeature([], tf.string)
 
     features = tf.parse_single_example(
         serialized_example,
@@ -262,14 +267,26 @@ def read_and_decode(
 
     if normalize:  # If we want to ensure all images are [0, 1]
         image /= tf.reduce_max(image, keep_dims=True)
-    image = tf.squeeze(image)  # had to add this 5/11/17... make sure this is OK
+    image = tf.squeeze(image)
 
     if return_gedi:
-        gedi_image = tf.decode_raw(features['gedi'], tf.float32)
-        gedi_image = tf.reshape(gedi_image, np.asarray(im_size)[:num_channels])
-        gedi_image /= tf.squeeze(max_value)
-        gedi_image = tf.cast(repeat_elements(tf.expand_dims(
-            gedi_image, 2), 3, axis=2), tf.float32)
+        extra_image = tf.decode_raw(
+            features['gedi'], tf.float32)
+        extra_image = tf.reshape(
+            extra_image, np.asarray(im_size)[:num_channels])
+        extra_image /= tf.squeeze(
+            max_value)
+        extra_image = tf.cast(
+            repeat_elements(tf.expand_dims(
+                extra_image, 2), 3, axis=2), tf.float32)
+    if return_extra_gfp:
+        extra_image = tf.decode_raw(features[extra_gfp_name], tf.float32)
+        extra_image = tf.reshape(
+            extra_image, np.asarray(im_size)[:num_channels])
+        extra_image /= tf.squeeze(max_value)
+        extra_image = tf.cast(
+            repeat_elements(tf.expand_dims(
+                extra_image, 2), 3, axis=2), tf.float32)
 
     # Insert augmentation and preprocessing here
     if train is not None:
@@ -280,10 +297,10 @@ def read_and_decode(
                 lorr,
                 lambda: tf.image.flip_left_right(image),
                 lambda: image)
-            gedi_image = tf.cond(
+            extra_image = tf.cond(
                 lorr,
-                lambda: tf.image.flip_left_right(gedi_image),
-                lambda: gedi_image)
+                lambda: tf.image.flip_left_right(extra_image),
+                lambda: extra_image)
         if 'up_down' in train:
             image = tf.image.flip_up_down(image)
             lorr = tf.less(tf.random_uniform([], minval=0, maxval=1.), .5)
@@ -291,29 +308,43 @@ def read_and_decode(
                 lorr,
                 lambda: tf.image.flip_up_down(image),
                 lambda: image)
-            gedi_image = control_flow_ops.cond(
+            extra_image = control_flow_ops.cond(
                 lorr,
-                lambda: tf.image.flip_up_down(gedi_image),
-                lambda: gedi_image)
+                lambda: tf.image.flip_up_down(extra_image),
+                lambda: extra_image)
         if 'rotate' in train:
-            random_rot = tf.squeeze(tf.multinomial(tf.log([[10., 10., 10., 10., 10.]]), 1))
-            rotation = tf.gather([0., 45., 90., 180., 270.], random_rot) * tf.constant(math.pi) / 180.
-            image = tf.contrib.image.rotate(image, rotation, interpolation='BILINEAR')
-            gedi_image = tf.contrib.image.rotate(gedi_image, rotation, interpolation='BILINEAR')
+            random_rot = tf.squeeze(
+                tf.multinomial(tf.log([[10., 10., 10., 10., 10.]]), 1))
+            rotation = tf.gather(
+                [0., 45., 90., 180., 270.], random_rot) * tf.constant(
+                math.pi) / 180.
+            image = tf.contrib.image.rotate(
+                image, rotation, interpolation='BILINEAR')
+            extra_image = tf.contrib.image.rotate(
+                extra_image, rotation, interpolation='BILINEAR')
         if 'random_contrast' in train:
-            image = tf.image.random_contrast(image, lower=0.0, upper=0.1)
-            image = tf.image.random_contrast(gedi_image, lower=0.0, upper=0.1)
+            image = tf.image.random_contrast(
+                image, lower=0.0, upper=0.1)
+            image = tf.image.random_contrast(
+                extra_image, lower=0.0, upper=0.1)
         if 'random_brightness' in train:
-            image = tf.image.random_brightness(image, max_delta=0.1)
-            gedi_image = tf.image.random_brightness(gedi_image, max_delta=0.1)
+            image = tf.image.random_brightness(
+                image, max_delta=0.1)
+            extra_image = tf.image.random_brightness(
+                extra_image, max_delta=0.1)
 
     if train is not None and 'random_crop' in train:
-        image, gedi_image = random_crop(image, gedi_image, im_size, model_input_shape, return_heatmaps=True)
+        image, extra_image = random_crop(
+            image,
+            extra_image,
+            im_size,
+            model_input_shape,
+            return_heatmaps=True)
     else:
         image = tf.image.resize_image_with_crop_or_pad(
             image, model_input_shape[0], model_input_shape[1])
-        gedi_image = tf.image.resize_image_with_crop_or_pad(
-            gedi_image, model_input_shape[0], model_input_shape[1])
+        extra_image = tf.image.resize_image_with_crop_or_pad(
+            extra_image, model_input_shape[0], model_input_shape[1])
 
     # Make sure to clip values to [0, 1]
     image = tf.clip_by_value(tf.cast(image, tf.float32), 0.0, 1.0)
@@ -324,8 +355,10 @@ def read_and_decode(
     if return_filename:
         filename = tf.decode_raw(features['filename'], tf.string)
         return image, label, filename
-    elif return_gedi:
-        return image, label, gedi_image
+    elif return_gedi or return_extra_gfp:
+        image = tf.expand_dims(image[:, :, 0], axis=-1)
+        extra_image = tf.expand_dims(extra_image[:, :, 0], axis=-1)
+        return image, label, extra_image
     else:
         return image, label
 
@@ -341,6 +374,7 @@ def inputs(
         min_value=None,
         return_filename=False,
         return_gedi=False,
+        return_extra_gfp=False,
         normalize=False):
     with tf.name_scope('input'):
         filename_queue = tf.train.string_input_producer(
@@ -368,8 +402,8 @@ def inputs(
                 min_after_dequeue=1000)
 
             return images, sparse_labels, filenames
-        elif return_gedi:
-            image, label, gedi_images = read_and_decode(
+        elif return_extra_gfp or return_gedi:  # TODO: Use dicts to make this API more flexible. .
+            image, label, extra_image = read_and_decode(
                 filename_queue=filename_queue,
                 im_size=im_size,
                 model_input_shape=model_input_shape,
@@ -378,16 +412,16 @@ def inputs(
                 min_value=min_value,
                 return_filename=return_filename,
                 normalize=normalize,
+                return_extra_gfp=return_extra_gfp,
                 return_gedi=return_gedi)
 
-            images, sparse_labels, gedi_images = tf.train.shuffle_batch(
-                [image, label, gedi_images],
+            images, sparse_labels, extra_images = tf.train.shuffle_batch(
+                [image, label, extra_image],
                 batch_size=batch_size,
                 num_threads=2,
                 capacity=1000 + 3 * batch_size,
                 min_after_dequeue=1000)
-
-            return images, sparse_labels, gedi_images
+            return images, sparse_labels, extra_images
         else:
             image, label = read_and_decode(
                 filename_queue=filename_queue,

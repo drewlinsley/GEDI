@@ -47,7 +47,7 @@ def tf_confusion_matrix(pred, targets):
     return tf.contrib.metrics.confusion_matrix(pred, targets)  # confusion
 
 
-def softmax_cost(logits, labels, ratio=None, rebalance=1, flip_ratio=True):
+def softmax_cost(logits, labels, ratio=None, rebalance=1, flip_ratio=True, eps=0.001, mask=1.):
     if ratio is not None:
         if rebalance is not None:
             ratio *= rebalance
@@ -63,12 +63,19 @@ def softmax_cost(logits, labels, ratio=None, rebalance=1, flip_ratio=True):
             tf.multiply(
                 weights_per_label,
                 tf.nn.sparse_softmax_cross_entropy_with_logits(
-                    logits=logits, labels=labels)))
+                    logits=logits, labels=labels)) * mask)
     else:
         return tf.reduce_mean(
             tf.nn.sparse_softmax_cross_entropy_with_logits(
                 logits=logits,
-                labels=labels))
+                labels=labels) * mask)
+
+
+def replace_nans(x, replace=0.):
+    return tf.where(
+        tf.is_nan(x),
+        tf.zeros_like(x) + replace,
+        x)
 
 
 def find_ckpts(config,dirs=None):

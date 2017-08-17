@@ -88,15 +88,22 @@ def extract_tf_records_from_GEDI_tiffs():
         im_lists['val'], im_lists['train'] = sample_files(
             im_lists['train'], config.train_proportion, config.tvt_flags)
     if config.encode_time_of_death is not None:
-        death_timepoints = pd.read_csv(config.encode_time_of_death)[['plate_well_neuron', 'dead_tp']]
+        death_timepoints = pd.read_csv(
+            config.encode_time_of_death)[['plate_well_neuron', 'dead_tp']]
         keep_experiments = pd.read_csv(config.time_of_death_experiments)
         im_labels = {}
         for k, v in im_lists.iteritems():
             if k is not 'test':
-                proc_ims, proc_labels = find_timepoint(images=v, data=death_timepoints, keep_experiments=keep_experiments)
+                proc_ims, proc_labels = find_timepoint(
+                    images=v,
+                    data=death_timepoints,
+                    keep_experiments=keep_experiments,
+                    remove_thresh=config.mask_timepoint_value)
                 im_labels[k] = proc_labels
                 im_lists[k] = proc_ims
-                df = pd.DataFrame(np.vstack((proc_ims, proc_labels)).transpose(), columns=['image', 'timepoint'])
+                df = pd.DataFrame(
+                    np.vstack((proc_ims, proc_labels)).transpose(),
+                    columns=['image', 'timepoint'])
                 df.to_csv('%s.csv' % k)
             else:
                 im_labels[k] = find_label(v)
@@ -110,11 +117,21 @@ def extract_tf_records_from_GEDI_tiffs():
     label_list = [write_labels(
         flag=x, im_lists=im_lists, config=config) for x in tvt_flags]
 
+    if config.include_GEDI_in_tfrecords > 0:
+        tf_flag = '_%sgedi' % config.include_GEDI_in_tfrecords
+    else:
+        tf_flag = ''
+    if config.extra_image:
+        tf_flag = '_1image'
+    else:
+        tf_flag = ''
+
     if type(config.tvt_flags) is str:
         files = im_lists[config.tvt_flags]
         label_list = im_labels[config.tvt_flags]
         output_pointer = os.path.join(
-            config.tfrecord_dir, config.tvt_flags + '.tfrecords')
+            config.tfrecord_dir, '%s%s.tfrecords' % (
+                config.tvt_flags, tf_flag))
         extract_to_tf_records(
             files=files,
             label_list=label_list,
@@ -127,7 +144,8 @@ def extract_tf_records_from_GEDI_tiffs():
             files = im_lists[k]
             label_list = im_labels[k]
             output_pointer = os.path.join(
-                config.tfrecord_dir, config.tf_record_names[k])
+                config.tfrecord_dir, '%s%s.tfrecords' % (
+                    tf_flag, config.tf_record_names[k]))
             extract_to_tf_records(
                 files=files,
                 label_list=label_list,

@@ -9,7 +9,6 @@ from scipy import misc
 from glob import glob
 from tqdm import tqdm
 from exp_ops.preprocessing_GEDI_images import produce_patch
-import pandas as pd
 
 
 # # # For prepare tf records
@@ -166,6 +165,7 @@ def features_to_dict(
         filename,
         ratio,
         gedi_image,
+        extra_image=None,
         ratio_placeholder=-1.):
     if ratio is None:
         ratio = ratio_placeholder
@@ -173,16 +173,25 @@ def features_to_dict(
         label = int64_feature(label)
     else:
         label = floats_feature(label)
-    if gedi_image is None:
-        gedi_image = np.zeros_like(image, dtype=image.dtype) - 1.
 
-    return {  # Go ahead and store a None ratio if necessary
+    out_dict = {  # Go ahead and store a None ratio if necessary
         'label': label,
         'image': bytes_feature(image.tostring()),
         'filename': bytes_feature(filename),
         'ratio': floats_feature(ratio),
-        'gedi': bytes_feature(gedi_image.tostring())
     }
+
+    if gedi_image is None:
+        pass
+    elif isinstance(gedi_image, list):
+        for idx in range(len(gedi_image)):
+            out_dict['gedi_%s' % idx] = bytes_feature(
+                gedi_image[idx].tostring())
+    else:
+        out_dict['gedi'] = bytes_feature(gedi_image.tostring())
+    if extra_image is not None:
+        out_dict['image_1'] = bytes_feature(extra_image.tostring())
+    return out_dict
 
 
 def extract_to_tf_records(
@@ -229,16 +238,37 @@ def extract_to_tf_records(
                     min_value=config.min_gedi).astype(np.float32)
             if np.isnan(image).sum() != 0:
                 nan_images[idx] = 1
-            if config.include_GEDI_in_tfrecords:
-                gedi_image = produce_patch(
+            if config.include_GEDI_in_tfrecords == False:
+                gedi_image = None
+            else:
+                if config.include_GEDI_in_tfrecords > 0:
+                    gedi_image = produce_patch(
+                        f,
+                        config.channel,
+                        2,
+                        divide_panel=config.divide_panel,
+                        max_value=config.max_gedi,
+                        min_value=config.min_gedi).astype(np.float32)
+                else:
+                    gedi_image = [produce_patch(
+                        f,
+                        config.channel + idx,
+                        2,
+                        divide_panel=config.divide_panel,
+                        max_value=config.max_gedi,
+                        min_value=config.min_gedi).astype(
+                            np.float32) for idx in range(
+                            config.include_GEDI_in_tfrecords)]
+            if config.extra_image:
+                extra_image = produce_patch(
                     f,
-                    config.channel,
-                    2,
+                    config.channel + 1,  # Hardcoded for now.
+                    config.panel,
                     divide_panel=config.divide_panel,
                     max_value=config.max_gedi,
                     min_value=config.min_gedi).astype(np.float32)
             else:
-                gedi_image = None
+                extra_image = None
             max_array[idx] = np.max(image)
             # construct the Example proto boject
             feature_dict = features_to_dict(
@@ -246,7 +276,8 @@ def extract_to_tf_records(
                 image=image,
                 filename=f,
                 ratio=r,
-                gedi_image=gedi_image)
+                gedi_image=gedi_image,
+                extra_image=extra_image)
             example = tf.train.Example(
                 # Example contains a Features proto object
                 features=tf.train.Features(
