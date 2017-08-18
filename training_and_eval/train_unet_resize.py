@@ -227,7 +227,16 @@ def train_vgg16(train_dir=None, validation_dir=None):
             class_loss = cost
             tf.summary.scalar("cce cost", cost)
 
-            # GEDI loss
+            # GEDI loss  -- Normalize each to [0, 1]
+            eps = 1e-12
+            # vgg.deconv_output /= (tf.reduce_max(
+            #     vgg.deconv_output,
+            #     reduction_indices=[1, 2, 3],
+            #     keep_dims=True) + eps)
+            train_gedi_images /= (tf.reduce_max(
+                train_gedi_images,
+                reduction_indices=[1, 2, 3],
+                keep_dims=True) + eps)
             gedi_loss = tf.nn.l2_loss(
                 gedi_nan * (vgg.deconv_output - train_gedi_images))
             tf.summary.scalar("%s cost" % extra_im_name, gedi_loss)
@@ -268,7 +277,7 @@ def train_vgg16(train_dir=None, validation_dir=None):
             tf.summary.scalar("training accuracy", train_accuracy)
             tf.summary.image(
                 "training prediction %s" % extra_im_name,
-                vgg.deconv_output)
+                tf.concat([vgg.deconv_output, vgg.deconv_output, vgg.deconv_output], axis=-1))
 
             # Setup validation op
             if validation_data is not False:
@@ -311,7 +320,7 @@ def train_vgg16(train_dir=None, validation_dir=None):
                     val_gedi_loss)
                 tf.summary.image(
                     "validation prediction %s" % extra_im_name,
-                    val_vgg.deconv_output)
+                    tf.concat([val_vgg.deconv_output, val_vgg.deconv_output, val_vgg.deconv_output], axis=-1))
 
     # Set up summaries and saver
     saver = tf.train.Saver(
@@ -345,7 +354,6 @@ def train_vgg16(train_dir=None, validation_dir=None):
             if np.isnan(loss_value).sum():
                 import ipdb;ipdb.set_trace()
             assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
-
             if step % config.validation_steps == 0:
                 if validation_data is not False:
                     _, val_acc, val_gedi_loss_val = sess.run([train_op, val_accuracy, val_gedi_loss])
