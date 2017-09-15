@@ -10,7 +10,7 @@ from glob import glob
 from exp_ops.tf_fun import make_dir
 from exp_ops.preprocessing_GEDI_images import produce_patch
 from gedi_config import GEDIconfig
-from models import GEDI_vgg16_trainable_batchnorm_shared as vgg16
+from models import baseline_vgg16 as vgg16
 from sklearn.pipeline import make_pipeline
 from sklearn.svm import LinearSVC
 from sklearn import preprocessing

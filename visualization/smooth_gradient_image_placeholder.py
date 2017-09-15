@@ -1,18 +1,88 @@
 import os
 import time
 import re
-import cPickle
 import tensorflow as tf
 import numpy as np
-import pandas as pd
 from argparse import ArgumentParser
 from glob import glob
 from exp_ops.tf_fun import make_dir
 from exp_ops.preprocessing_GEDI_images import produce_patch
 from gedi_config import GEDIconfig
+import ipdb;ipdb.set_trace()
 from models import baseline_vgg16 as vgg16
+from matplotlib import pyplot as plt
 from tqdm import tqdm
-from datetime import datetime
+
+
+def flatten_list(l):
+    """Flatten a list of lists."""
+    return [val for sublist in l for val in sublist]
+
+
+def save_images(
+        y,
+        yhat,
+        viz,
+        files,
+        output_folder,
+        target,
+        label_dict,
+        ext='.png'):
+    """Save TP/FP/TN/FN images in separate folders."""
+    quality = ['true', 'false']
+    folders = [[os.path.join(
+        output_folder, '%s_%s' % (
+            k, quality[0])), os.path.join(
+        output_folder, '%s_%s' % (
+            k, quality[1]))] for k in label_dict.keys()]
+    flat_folders = flatten_list(folders)
+    [make_dir(f) for f in flat_folders]
+    for iy, iyhat, iviz, ifiles in zip(y, yhat, viz, files):
+        correct = iy == iyhat
+        target_label = iy == target
+        f = plt.figure()
+        plt.imshow(iviz)
+        it_f = ifiles.split('/')[-1].split('\.')[0]
+        if correct and target_label:
+            # TP
+            it_folder = folders[0][0]
+        elif correct and not target_label:
+            # TN
+            it_folder = folders[0][1]
+        elif not correct and target_label:
+            # FP
+            it_folder = folders[1][0]
+        elif not correct and not target_label:
+            # FN
+            it_folder = folders[1][1]
+        plt.title('Predicted label=%s, true label=%s' % (iyhat, iy))
+        plt.savefig(
+            os.path.join(
+                it_folder,
+                '%s%s' % (it_f, ext)))
+        plt.close(f)
+
+
+def make_dir(d):
+    """Make directory d if it does not exist."""
+    if not os.path.exists(d):
+        os.makedirs(d)
+
+
+def visualization_function(images, viz):
+    """Wrapper for summarizing visualizations across channels."""
+    if viz == 'sum_abs':
+        return np.sum(np.abs(images), axis=-1)
+    elif viz == 'sum_p':
+        return np.sum(np.pow(images, 2), axis=-1)
+    else:
+        raise RuntimeError('Visualization method not implemented.')
+
+
+def add_noise(image_batch, loc=0, scale=0.15 / 255):
+    """Add gaussian noise to the input for smoothing visualizations."""
+    return np.copy(image_batch) + np.random.normal(
+        size=image_batch.shape, loc=loc, scale=scale)
 
 
 def crop_center(img, crop_size):
@@ -41,10 +111,7 @@ def image_batcher(
     for b in range(num_batches):
         next_image_batch = images[start:start + config.validation_batch]
         image_stack = []
-        if labels is None:
-            label_stack = None
-        else:
-            label_stack = labels[start:start + config.validation_batch]
+        label_stack = labels[start:start + config.validation_batch]
         for f in next_image_batch:
             # 1. Load image patch
             patch = produce_patch(
@@ -85,37 +152,30 @@ def randomization_test(y, yhat, iterations=10000):
     return p_value
 
 
-def test_vgg16(
-        model_file,
-        trained_svm,
+# Evaluate your trained model on GEDI images
+def visualize_model(
         live_ims,
-        dead_ims=None,
-        output_csv='prediction_file',
-        C=1e-3,
-        k_folds=10):
-    """Test an SVM you've trained on a new dataset."""
+        dead_ims,
+        model_file,
+        output_folder,
+        smooth_iterations=50,
+        untargeted=False,
+        viz='sum_abs'):
+    """Train an SVM for your dataset on GEDI-model encodings."""
     config = GEDIconfig()
     if live_ims is None:
         raise RuntimeError(
             'You need to supply a directory path to the live images.')
     if dead_ims is None:
-        print 'Assuming all of your images are in the live_ims folder' + \
-            '-- will not derive labels to calculate accuracy.'
-    if not os.path.exists(trained_svm):
         raise RuntimeError(
-            'Cannot find the trained svm model. Check the path you passed.')
+            'You need to supply a directory path to the dead images.')
 
-    if live_ims is not None and dead_ims is not None:
-        live_files = glob(os.path.join(live_ims, '*%s' % config.raw_im_ext))
-        dead_files = glob(os.path.join(dead_ims, '*%s' % config.raw_im_ext))
-        combined_labels = np.concatenate((
-            np.zeros(len(live_files)),
-            np.ones(len(dead_files))))
-        combined_files = np.concatenate((live_files, dead_files))
-    else:
-        live_files = glob(os.path.join(live_ims, '*%s' % config.raw_im_ext))
-        combined_labels = None
-        combined_files = np.asarray(live_files)
+    live_files = glob(os.path.join(live_ims, '*%s' % config.raw_im_ext))
+    dead_files = glob(os.path.join(dead_ims, '*%s' % config.raw_im_ext))
+    combined_labels = np.concatenate((
+        np.zeros(len(live_files)),
+        np.ones(len(dead_files))))
+    combined_files = np.concatenate((live_files, dead_files))
     if len(combined_files) == 0:
         raise RuntimeError('Could not find any files. Check your image path.')
 
@@ -124,8 +184,7 @@ def test_vgg16(
         model_file.split('/model')[0], 'train_maximum_value.npz')
     if not os.path.exists(meta_file_pointer):
         raise RuntimeError(
-            'Cannot find the training data meta file.' +
-            'Download this from the link described in the README.md.')
+            'Cannot find the training data meta file. Download this from the link described in the README.md.')
     meta_data = np.load(meta_file_pointer)
 
     # Prepare image normalization values
@@ -145,6 +204,10 @@ def test_vgg16(
         tf.float32,
         shape=[None] + config.model_image_size,
         name='images')
+    labels = tf.placeholder(
+        tf.int64,
+        shape=[None],
+        name='labels')
 
     # Prepare model on GPU
     with tf.device('/gpu:0'):
@@ -159,13 +222,18 @@ def test_vgg16(
         # Setup validation op
         scores = vgg.fc7
         preds = tf.argmax(vgg.prob, 1)
+        activity_pattern = vgg.fc8
+        if not untargeted:
+            oh_labels = tf.one_hot(labels, config.output_shape)
+            activity_pattern *= oh_labels
+        grad_image = tf.gradients(activity_pattern, images)
 
     # Set up saver
     saver = tf.train.Saver(tf.global_variables())
 
     # Loop through each checkpoint then test the entire validation set
     ckpts = [model_file]
-    ckpt_yhat, ckpt_y, ckpt_scores, ckpt_file_array = [], [], [], []
+    ckpt_yhat, ckpt_y, ckpt_scores, ckpt_file_array, ckpt_viz_images = [], [], [], [], []
     print '-' * 60
     print 'Beginning evaluation'
     print '-' * 60
@@ -176,7 +244,7 @@ def test_vgg16(
         config.validation_batch = len(combined_files)
 
     for idx, c in tqdm(enumerate(ckpts), desc='Running checkpoints'):
-        dec_scores, yhat, y, file_array = [], [], [], []
+        dec_scores, yhat, y, file_array, viz_images = [], [], [], [], []
         # Initialize the graph
         sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
         sess.run(
@@ -201,74 +269,61 @@ def test_vgg16(
                     training_min=training_min),
                 total=num_batches):
             feed_dict = {
-                images: image_batch
+                images: image_batch,
+                labels: label_batch
             }
+            it_grads = np.zeros((image_batch.shape))
             sc, tyh = sess.run(
                 [scores, preds],
                 feed_dict=feed_dict)
+            for idx in range(smooth_iterations):
+                feed_dict = {
+                    images: add_noise(image_batch),
+                    labels: label_batch
+                }
+                it_grad = sess.run(
+                    grad_image,
+                    feed_dict=feed_dict)
+                it_grads += it_grad[0]
+            import ipdb;ipdb.set_trace()
+            it_grads /= smooth_iterations  # Mean across iterations
+            it_grads = visualization_function(it_grads, viz)
             dec_scores += [sc]
             yhat = np.append(yhat, tyh)
             y = np.append(y, label_batch)
             file_array = np.append(file_array, file_batch)
+            viz_images += [it_grads]
         ckpt_yhat.append(yhat)
         ckpt_y.append(y)
         ckpt_scores.append(dec_scores)
         ckpt_file_array.append(file_array)
+        ckpt_viz_images.append(viz_images)
         print 'Batch %d took %.1f seconds' % (
             idx, time.time() - start_time)
     sess.close()
 
     # Save everything
-    new_dt_string = re.split('\.', str(datetime.now()))[0].\
-        replace(' ', '_').replace(':', '_').replace('-', '_')
     np.savez(
-        os.path.join(out_dir, '%s_validation_accuracies' % new_dt_string),
+        os.path.join(out_dir, 'validation_accuracies'),
         ckpt_yhat=ckpt_yhat,
         ckpt_y=ckpt_y,
         ckpt_scores=ckpt_scores,
         ckpt_names=ckpts,
-        combined_files=ckpt_file_array)
+        combined_files=ckpt_file_array,
+        ckpt_viz_images=ckpt_viz_images)
 
-    # Run SVM
-    clf = cPickle.load(open(trained_svm, 'rb'))
-    predictions = clf.predict(np.concatenate(dec_scores))
-    if combined_labels is not None:
-        mean_acc = np.mean(predictions == y)
-        p_value = randomization_test(y=y, yhat=predictions)
-        print 'SVM performance: mean accuracy = %s%%, p = %.5f' % (
-            mean_acc,
-            p_value)
-        df_col_label = 'true label'
-    else:
-        mean_acc, p_value = None, None
-        y = np.copy(yhat)
-        df_col_label = 'Dummy column (no labels supplied)'
-    np.savez(
-        os.path.join(out_dir, '%s_svm_test_data' % new_dt_string),
-        yhat=yhat,
-        y=y,
-        scores=dec_scores,
-        ckpts=ckpts,
-        p_value=p_value)
-
-    # Also save a csv with item/guess pairs
-    try:
-        trimmed_files = [re.split('/', x)[-1] for x in combined_files]
-        trimmed_files = np.asarray(trimmed_files)
-        dec_scores = np.asarray(dec_scores)
-        yhat = np.asarray(yhat)
-        df = pd.DataFrame(
-            np.hstack((
-                trimmed_files.reshape(-1, 1),
-                yhat.reshape(-1, 1),
-                y.reshape(-1, 1))),
-            columns=['files', 'guesses', df_col_label])
-        df.to_csv(os.path.join(out_dir, 'prediction_file.csv'))
-        print 'Saved csv to: %s' % out_dir
-    except:
-        print 'X' * 60
-        print 'Could not save a spreadsheet of file info'
-        print 'X' * 60
+    # Save images
+    save_images(
+        y=ckpt_y,
+        yhat=ckpt_yhat,
+        viz=ckpt_viz_images,
+        files=ckpt_file_array,
+        output_folder=output_folder,
+        target='dead',
+        label_dict={
+            'live': 0,
+            'dead': 1
+        })
 
 
 if __name__ == '__main__':
@@ -277,14 +332,14 @@ if __name__ == '__main__':
         "--live_ims",
         type=str,
         dest="live_ims",
-        default='/Users/drewlinsley/Documents/GEDI_images/human_bs',
-        help="Directory containing your .tiff images.")
+        default='/Users/drewlinsley/Documents/GEDI_images/Live_bs_rat',
+        help="Directory containing your Live .tiff images.")
     parser.add_argument(
         "--dead_ims",
         type=str,
         dest="dead_ims",
-        default='/Users/drewlinsley/Documents/GEDI_images/human_bs',
-        help="Directory containing your .tiff images.")
+        default='/Users/drewlinsley/Documents/GEDI_images/Dead_bs_rat',
+        help="Directory containing your Dead .tiff images.")
     parser.add_argument(
         "--model_file",
         type=str,
@@ -292,22 +347,28 @@ if __name__ == '__main__':
         default='/Users/drewlinsley/Desktop/trained_gedi_model/model_58600.ckpt-58600',
         help="Folder containing your trained CNN's checkpoint files.")
     parser.add_argument(
-        "--output_csv",
-        type=str,
-        dest="output_csv",
-        default='prediction_file',
-        help="Name of your prediction csv file.")
+        "--untargeted",
+        dest="untargeted",
+        action='store_true',
+        help='Visualize overall saliency instead of features related to the most likely category.')
     parser.add_argument(
-        "--trained_svm",
-        type=str,
-        dest="svm_model",
-        default='trained_svm',
-        help="Directory pointer to your trained svm model.")
+        "--smooth_iterations",
+        type=int,
+        dest="model_file",
+        default=10,
+        help='Number of iterations of smoothing for visualizations.')
     parser.add_argument(
-        "--C",
-        type=float,
-        dest="C",
-        default=1e-3,
-        help="C parameter for your SVM.")
+        "--visualization",
+        type=str,
+        dest="viz",
+        default='sum_abs',
+        help='Number of iterations of smoothing for visualizations.')
+    parser.add_argument(
+        "--output_folder",
+        type=str,
+        dest="output_folder",
+        default='gradient_images',
+        help='Folder to save the visualizations.')
+
     args = parser.parse_args()
-    test_vgg16(**vars(args))
+    visualize_model(**vars(args))

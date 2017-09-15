@@ -11,7 +11,7 @@ from exp_ops.plotting_fun import plot_accuracies, plot_std, plot_cms, plot_pr,\
     plot_cost
 from exp_ops.preprocessing_GEDI_images import produce_patch
 from gedi_config import GEDIconfig
-from models import GEDI_vgg16_trainable_batchnorm_shared as vgg16
+from models import baseline_vgg16 as vgg16
 from tqdm import tqdm
 
 
