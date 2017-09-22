@@ -354,7 +354,7 @@ if __name__ == '__main__':
     parser.add_argument(
         "--smooth_iterations",
         type=int,
-        dest="model_file",
+        dest="smooth_iterations",
         default=10,
         help='Number of iterations of smoothing for visualizations.')
     parser.add_argument(

@@ -66,7 +66,7 @@ After preparing data in a CNN-friendly format, you want to train a model. Look i
 ## 4. Visualize model decisions in pixel space -- why did the model make the decisions it made?
 * Option A: Visualize decisions on any dataset with the gradient image method. (model_dir is your model, validation_data is the tf-records file you want to test on.)
 
-```python visualization/gradient_tf.py --model_dir=/media/data/GEDI/drew_images/project_files/train_checkpoint/gfp_2017_05_27_13_56_55 --validation_data=/media/data/GEDI/drew_images/project_files/tfrecords/all_rh_analysis_rat_gfp/val.tfrecords --selected_ckpts=32```
+```python visualization/smooth_gradient_image_placeholder.py --live_ims=/path/to/Live_rat --dead_ims=/path/to/Dead_rat model_file=/path/to/GEDI_trained_model/model_58600.ckpt-58600 --output_folder=/path/to/output_visualization_folder```
  
 
 ## Common errors:
@@ -77,10 +77,3 @@ ImportError: No module named gedi_config`
 Setup did not successfully add the project directory to your pythonpath, so you have to do this by hand: `export PYTHONPATH=$PYTHONPATH:/my/path/with/gedi_project` or `export PYTHONPATH=$PYTHONPATH:$(pwd)`
 
 * Segmentation fault. This was raised when running the test_vgg16_placeholder.py script on the CPU. It did not repeat. Try running the script again.
-----
-
--- Need to add the filename to tfrecords
--- Finish the LSTM prediction
--- Finish other viz methods
--- Finish ratio prediction
--- DOCUMENTATION TO ADD: 1) May need to add folder to pythonpath; 2) Link to vgg16.npy; 3) Link to working GEDI model.                
