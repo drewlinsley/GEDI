@@ -50,6 +50,8 @@ def tag_with_disease(
                 raise RuntimeError(
                     'Found multiple matches in the template (bad template).')
             it_row['disease'] = template.iloc[both_rows.index[0]]['type']
+            it_row['plate_well_neuron'] = '_'.join(
+                it_row['plate_well_neuron'].split('_')[1:])
             rows += [it_row]
     return pd.DataFrame(rows)
 
@@ -63,4 +65,4 @@ if __name__ == '__main__':
     combined_data = tag_with_disease(
         combined_data,
         template='autopsy_huntington_parkinson.csv')
-    combined_data.to_csv('combined_timecourses.csv')
+    combined_data.to_csv('processed_autopsy_info.csv')
