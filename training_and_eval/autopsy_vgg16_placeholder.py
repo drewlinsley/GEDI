@@ -88,7 +88,8 @@ def test_vgg16(
         model_file,
         autopsy_csv=None,
         autopsy_path=None,
-        output_csv='prediction_file'):
+        output_csv='prediction_file',
+        target_layer='fc7'):
     """Testing function for pretrained vgg16."""
     assert autopsy_csv is not None, 'You must pass an autopsy file name.'
     assert autopsy_path is not None, 'You must pass an autopsy path.'
@@ -220,13 +221,15 @@ def test_vgg16(
 
     # Create and plot an embedding
     tsne = TSNE(n_components=2, init='pca', random_state=0)
-    Y = tsne.fit_transform(dec_scores)
+    y = tsne.fit_transform(dec_scores)
     f, ax = plt.subplot(111)
     unique_cats = np.unique(pathologies)
     cmap = plt.cm.Spectral(len(unique_cats))
+    h = []
     for cat, cm in zip(unique_cats, cmap):
         idx = unique_cats == cat
-        plt.scatter(Y[idx, 0], Y[idx, 1], c=cm)
+        h += [plt.scatter(y[idx, 0], y[idx, 1], c=cm)]
+    plt.legend(h, unique_cats)
     plt.axis('tight')
     plt.show()
     plt.savefig('embedding.png')
@@ -242,7 +245,7 @@ def test_vgg16(
 
     # Ouput csv
     df = pd.DataFrame(
-        np.hstack((Y, pathologies.reshape(-1, 1))),
+        np.hstack((y, pathologies.reshape(-1, 1))),
         columns=['D1', 'D2', 'pathology'])
     out_name = os.path.join(out_dir, 'embedding.csv')
     df.to_csv(out_name)
