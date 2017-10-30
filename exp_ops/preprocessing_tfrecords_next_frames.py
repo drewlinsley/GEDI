@@ -8,15 +8,17 @@ import tensorflow as tf
 from scipy import misc
 from glob import glob
 from tqdm import tqdm
-from exp_ops.preprocessing_GEDI_images import produce_patch
+from exp_ops.preprocessing_GEDI_images import produce_patch, derive_timepoints, rescale_patch
 
 
 # # # For prepare tf records
 def flatten_list(l):
+    """Flatten a list of lists."""
     return [item for sublist in l for item in sublist]
 
 
 def get_file_list(GEDI_path, label_directories, im_ext):
+    """Glob some files."""
     files = []
     for idx in label_directories:
         print 'Getting files from: %s' % (os.path.join(
@@ -28,11 +30,13 @@ def get_file_list(GEDI_path, label_directories, im_ext):
 
 
 def write_label_list(files, label_list):
+    """Write a txt file of labels."""
     with open(label_list, "w") as f:
         f.writelines([ln + '\n' for ln in files])
 
 
 def split_files(files, train_proportion, tvt_flags):
+    """Create CV sets"""
     num_files = len(files)
     all_labels = find_label(files)
     files = np.asarray(files)
@@ -69,6 +73,7 @@ def split_files(files, train_proportion, tvt_flags):
 
 
 def sample_files(files, train_proportion, tvt_flags):
+    """Sample from these files."""
     num_files = len(files)
     files = np.asarray(files)
     rand_order = np.random.permutation(num_files)
@@ -79,11 +84,13 @@ def sample_files(files, train_proportion, tvt_flags):
 
 
 def move_files(files, target_dir):
+    """Move files."""
     for idx in files:
         shutil.copyfile(idx, target_dir + re.split('/', idx)[-1])
 
 
 def load_im_batch(files, hw, normalize):
+    """Load batch of images."""
     labels = []
     images = []
     if len(hw) == 2:
@@ -104,36 +111,41 @@ def load_im_batch(files, hw, normalize):
 
 
 def find_label(files):
+    """Regex split strings for labels."""
     _, c = np.unique(
         [re.split('/', l)[-2] for l in files], return_inverse=True)
     return c
 
 
 def bytes_feature(values):
+    """TF bytes features."""
     return tf.train.Feature(bytes_list=tf.train.BytesList(value=[values]))
 
 
 def int64_feature(values):
+    """TF int features."""
     if not isinstance(values, (tuple, list)):
         values = [values]
     return tf.train.Feature(int64_list=tf.train.Int64List(value=values))
 
 
 def floats_feature(values):
+    """TF float features."""
     if not isinstance(values, (tuple, list)):
         values = [values]
     return tf.train.Feature(float_list=tf.train.FloatList(value=values))
 
 
 def image_converter(im_ext):
+    """TF image encoding."""
     if im_ext == '.jpg' or im_ext == '.jpeg' or im_ext == '.JPEG':
         out_fun = tf.image.encode_jpeg
     elif im_ext == '.png':
         out_fun = tf.image.encode_png
     else:
-        print '-'*60
+        print '-' * 60
         traceback.print_exc(file=sys.stdout)
-        print '-'*60
+        print '-' * 60
     return out_fun
 
 
@@ -142,10 +154,8 @@ def get_image_ratio(
         ratio_list,
         timepoints,
         id_column,
-        regex_match
-        ):
-    '''Loop through the ratio list until you find the
-    id_column row that matches f'''
+        regex_match):
+    '''Loop through the ratio list to find id_column row that matches f'''
     if f is None or ratio_list is None:
         return None
     else:
@@ -167,6 +177,7 @@ def features_to_dict(
         gedi_image,
         extra_image=None,
         ratio_placeholder=-1.):
+    """Create a dictionary out of data."""
     if ratio is None:
         ratio = ratio_placeholder
     if isinstance(label, int):
@@ -200,96 +211,73 @@ def extract_to_tf_records(
         ratio_list,
         output_pointer,
         config,
-        k):
+        k,
+        rescale=True):
+    """Extract images as TF record files."""
     print 'Building %s: %s' % (k, config.tfrecord_dir)
-    max_array = np.zeros(len(files))
-    min_array = np.zeros(len(files))
-    nan_images = np.zeros(len(files))
+    max_array = []
+    min_array = []
+    nan_images = []
+    count = 0
     with tf.python_io.TFRecordWriter(output_pointer) as tfrecord_writer:
         for idx, (f, l) in tqdm(
             enumerate(
                 zip(files, label_list)), total=len(files)):
-            import ipdb;ipdb.set_trace()
             r = get_image_ratio(
                 f,
                 ratio_list,
                 timepoints=config.channel,
                 id_column=config.id_column,
                 regex_match=config.ratio_regex)
-            if isinstance(config.channel, list):
-                image = []
-                for c in config.channel:
-                    image += [produce_patch(
-                        f,
-                        c,
-                        config.panel,
-                        divide_panel=config.divide_panel,
-                        max_value=config.max_gedi,
-                        min_value=config.min_gedi).astype(
-                            np.float32)[None, :, :]]
-                image = np.concatenate(image)
-                l = (r > config.ratio_cutoff).astype(int)
-            else:
-                image = produce_patch(
-                    f,
-                    config.channel,
-                    config.panel,
-                    divide_panel=config.divide_panel,
-                    max_value=config.max_gedi,
-                    min_value=config.min_gedi).astype(np.float32)
-            if np.isnan(image).sum() != 0:
-                nan_images[idx] = 1
-            if config.include_GEDI_in_tfrecords == False:
-                gedi_image = None
-            else:
-                if config.include_GEDI_in_tfrecords > 0:
-                    gedi_image = produce_patch(
-                        f,
-                        config.channel,
-                        2,
-                        divide_panel=config.divide_panel,
-                        max_value=config.max_gedi,
-                        min_value=config.min_gedi).astype(np.float32)
-                else:
-                    gedi_image = [produce_patch(
-                        f,
-                        config.channel + idx,
-                        2,
-                        divide_panel=config.divide_panel,
-                        max_value=config.max_gedi,
-                        min_value=config.min_gedi).astype(
-                            np.float32) for idx in range(
-                            config.include_GEDI_in_tfrecords)]
-            if config.extra_image:
-                extra_image = produce_patch(
-                    f,
-                    config.channel + 1,  # Hardcoded for now.
-                    config.panel,
-                    divide_panel=config.divide_panel,
-                    max_value=config.max_gedi,
-                    min_value=config.min_gedi).astype(np.float32)
-            else:
-                extra_image = None
-            max_array[idx] = np.max(image)
-            # construct the Example proto boject
-            feature_dict = features_to_dict(
-                label=l,
-                image=image,
-                filename=f,
-                ratio=r,
-                gedi_image=gedi_image,
-                extra_image=extra_image)
-            example = tf.train.Example(
-                # Example contains a Features proto object
-                features=tf.train.Features(
-                    # Features has a map of string to Feature proto objects
-                    feature=feature_dict
+            num_timepoints = derive_timepoints(f)
+            images = produce_patch(
+                f,
+                config.channel,
+                config.panel,
+                divide_panel=config.divide_panel,
+                max_value=config.max_gedi,
+                min_value=config.min_gedi,
+                return_raw=True).astype(np.float32)
+
+            # Produce {t, t+1} image set for every pair in images
+            for t in range(1, num_timepoints):
+                it_im = images[t - 1]
+                next_im = images[t]
+                if rescale:
+                    it_im = rescale_patch(
+                        it_im,
+                        min_value=it_im.max(),
+                        max_value=it_im.min())
+                    next_im = rescale_patch(
+                        next_im,
+                        min_value=next_im.max(),
+                        max_value=next_im.min())
+                max_array += [np.max(it_im)]
+                min_array += [np.min(it_im)]
+
+                if np.isnan(it_im).sum():
+                    nan_images += [1]
+
+                # construct the Example proto boject
+                feature_dict = features_to_dict(
+                    label=l,
+                    image=it_im,
+                    filename=f,
+                    ratio=r,
+                    gedi_image=None,  # Not implemented
+                    extra_image=next_im)
+                count += 1
+                example = tf.train.Example(
+                    # Example contains a Features proto object
+                    features=tf.train.Features(
+                        # Features has a map of string to Feature proto objects
+                        feature=feature_dict
+                    )
                 )
-            )
-            # use the proto object to serialize the example to a string
-            serialized = example.SerializeToString()
-            # write the serialized object to disk
-            tfrecord_writer.write(serialized)
+                # use the proto object to serialize the example to a string
+                serialized = example.SerializeToString()
+                # write the serialized object to disk
+                tfrecord_writer.write(serialized)
 
     # Calculate ratio of +:-
     lab_counts = np.asarray(
@@ -302,7 +290,8 @@ def extract_to_tf_records(
         max_array=max_array,
         min_array=min_array,
         ratio=ratio,
-        filenames=files)
+        filenames=files,
+        nan_images=nan_images)
     return max_array, min_array
 
 

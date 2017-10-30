@@ -8,7 +8,9 @@ from gedi_config import GEDIconfig
 from glob import glob
 from exp_ops.tf_fun import make_dir
 from exp_ops.preprocessing_tfrecords import write_label_list, sample_files, \
-    extract_to_tf_records, write_label_file, flatten_list, find_label, find_timepoint
+    write_label_file, flatten_list, find_label, find_timepoint
+from exp_ops.preprocessing_tfrecords import extract_to_tf_records as vanilla_tf_records
+from exp_ops.preprocessing_tfrecords_next_frames import extract_to_tf_records as tp_extract_to_tf_records
 
 
 def get_image_dict(config):
@@ -72,6 +74,12 @@ def extract_tf_records_from_GEDI_tiffs():
             os.path.join(ratio_file))
     else:
         ratio_list = None
+
+    # Allow option for per-timestep image extraction
+    if config.timestep_delta_frames:
+        extract_to_tf_records = tp_extract_to_tf_records
+    else:
+        extract_to_tf_records = vanilla_tf_records
 
     # Make dirs if they do not exist
     dir_list = [
