@@ -24,6 +24,7 @@ def get_image_dict(config):
 
 def write_labels(flag, im_lists, config):
     # Write labels list
+    make_dir(config.processed_image_patch_dir)
     label_list = os.path.join(
         config.processed_image_patch_dir, 'list_of_' + '_'.join(
             x for x in config.image_prefixes) + '_labels.txt')
@@ -59,15 +60,16 @@ def extract_tf_records_from_GEDI_tiffs():
     config = GEDIconfig()
 
     # If requested load in the ratio file
-    if config.ratio_prefix is not None:
+    ratio_file = os.path.join(
+        config.home_dir,
+        config.original_image_dir,
+        config.ratio_stem,
+        '%s%s.csv' % (
+            config.ratio_prefix,
+            config.experiment_image_set))
+    if config.ratio_prefix is not None and os.path.exists(ratio_file):
         ratio_list = read_csv(
-            os.path.join(
-                config.home_dir,
-                config.original_image_dir,
-                config.ratio_stem,
-                '%s%s.csv' % (
-                    config.ratio_prefix,
-                    config.experiment_image_set)))
+            os.path.join(ratio_file))
     else:
         ratio_list = None
 
@@ -114,6 +116,7 @@ def extract_tf_records_from_GEDI_tiffs():
         tvt_flags = [config.tvt_flags]
     else:
         tvt_flags = config.tvt_flags
+    assert len(np.concatenate(im_lists.values())), 'Could not find any files.'
     label_list = [write_labels(
         flag=x, im_lists=im_lists, config=config) for x in tvt_flags]
 

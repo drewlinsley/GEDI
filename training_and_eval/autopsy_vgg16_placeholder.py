@@ -14,7 +14,8 @@ from gedi_config import GEDIconfig
 from models import baseline_vgg16 as vgg16
 from tqdm import tqdm
 from matplotlib import pyplot as plt
-from sklearn.manifold import TSNE
+from sklearn import manifold
+from sklearn.decomposition import PCA
 
 
 def crop_center(img, crop_size):
@@ -89,7 +90,10 @@ def test_vgg16(
         autopsy_csv=None,
         autopsy_path=None,
         output_csv='prediction_file',
-        target_layer='fc7'):
+        target_layer='fc7',
+        save_npy=False,
+        shuffle_images=True,
+        embedding_type='PCA'):
     """Testing function for pretrained vgg16."""
     assert autopsy_csv is not None, 'You must pass an autopsy file name.'
     assert autopsy_path is not None, 'You must pass an autopsy path.'
@@ -108,6 +112,9 @@ def test_vgg16(
 
     combined_files = np.asarray(
         glob(os.path.join(image_dir, '*%s' % config.raw_im_ext)))
+    if shuffle_images:
+        combined_files = combined_files[np.random.permutation(
+            len(combined_files))]
     if len(combined_files) == 0:
         raise RuntimeError('Could not find any files. Check your image path.')
 
@@ -161,6 +168,8 @@ def test_vgg16(
             autopsy_data['plate_well_neuron'] == sf]['disease']
         if not len(it_path):
             it_path = 'Absent'
+        else:
+            it_path = it_path.as_matrix()[0]
         pathologies += [it_path]
     pathologies = np.asarray(pathologies)
 
@@ -193,6 +202,7 @@ def test_vgg16(
         num_batches = np.floor(
             len(combined_files) / float(
                 config.validation_batch)).astype(int)
+        num_batches = 2
         for image_batch, file_batch in tqdm(
                 image_batcher(
                     start=0,
@@ -208,10 +218,9 @@ def test_vgg16(
             sc, tyh = sess.run(
                 [scores, preds],
                 feed_dict=feed_dict)
-            dec_scores = np.append(dec_scores, sc)
-            yhat = np.append(yhat, tyh)
-            file_array = np.append(file_array, file_batch)
-
+            dec_scores += [sc]
+            yhat += [tyh]
+            file_array += [file_batch]
         ckpt_yhat.append(yhat)
         ckpt_scores.append(dec_scores)
         ckpt_file_array.append(file_array)
@@ -220,15 +229,39 @@ def test_vgg16(
     sess.close()
 
     # Create and plot an embedding
-    tsne = TSNE(n_components=2, init='pca', random_state=0)
-    y = tsne.fit_transform(dec_scores)
-    f, ax = plt.subplot(111)
-    unique_cats = np.unique(pathologies)
-    cmap = plt.cm.Spectral(len(unique_cats))
+    im_path_map = pathologies[:num_batches * config.validation_batch]
+    dec_scores = np.concatenate(dec_scores)
+    mu = dec_scores.mean(0)[None, :]
+    sd = dec_scores.std(0)[None, :]
+    dec_scores = (dec_scores - mu) / sd
+    yhat = np.concatenate(yhat)
+    file_array = np.concatenate(file_array)
+
+    if embedding_type == 'TSNE' or embedding_type == 'tsne':
+        emb = manifold.TSNE(n_components=2, init='pca', random_state=0)
+    elif embedding_type == 'PCA' or embedding_type == 'pca':
+        emb = PCA(n_components=2, svd_solver='randomized', random_state=0)
+    elif embedding_type == 'spectral':
+        emb = manifold.SpectralEmbedding(n_components=2, random_state=0)
+    y = emb.fit_transform(dec_scores)
+
+    # Ouput csv
+    df = pd.DataFrame(
+        np.hstack((y, im_path_map.reshape(-1, 1), file_array.reshape(-1, 1))),
+        columns=['D1', 'D2', 'pathology', 'filename'])
+    out_name = os.path.join(out_dir, 'embedding.csv')
+    df.to_csv(out_name)
+    print 'Saved csv to: %s' % out_name
+
+    # Create plot
+    f, ax = plt.subplots()
+    unique_cats = np.unique(im_path_map)
     h = []
-    for cat, cm in zip(unique_cats, cmap):
-        idx = unique_cats == cat
-        h += [plt.scatter(y[idx, 0], y[idx, 1], c=cm)]
+    for idx, cat in enumerate(unique_cats):
+        h += [plt.scatter(
+            y[im_path_map == cat, 0],
+            y[im_path_map == cat, 1],
+            c=plt.cm.Spectral(idx * 1000))]
     plt.legend(h, unique_cats)
     plt.axis('tight')
     plt.show()
@@ -236,20 +269,13 @@ def test_vgg16(
     plt.close(f)
 
     # Save everything
-    np.savez(
-        os.path.join(out_dir, 'validation_accuracies'),
-        ckpt_yhat=ckpt_yhat,
-        ckpt_scores=ckpt_scores,
-        ckpt_names=ckpts,
-        combined_files=ckpt_file_array)
-
-    # Ouput csv
-    df = pd.DataFrame(
-        np.hstack((y, pathologies.reshape(-1, 1))),
-        columns=['D1', 'D2', 'pathology'])
-    out_name = os.path.join(out_dir, 'embedding.csv')
-    df.to_csv(out_name)
-    print 'Saved csv to: %s' % out_name
+    if save_npy:
+        np.savez(
+            os.path.join(out_dir, 'validation_accuracies'),
+            ckpt_yhat=ckpt_yhat,
+            ckpt_scores=ckpt_scores,
+            ckpt_names=ckpts,
+            combined_files=ckpt_file_array)
 
 
 if __name__ == '__main__':
@@ -258,7 +284,7 @@ if __name__ == '__main__':
         "--image_dir",
         type=str,
         dest="image_dir",
-        default='/Users/drewlinsley/Documents/GEDI_images/Dead_nobs_rat',
+        default='/Users/drewlinsley/Documents/GEDI_images/cache_of_RGEDIMachineLearning26',
         help="Directory containing your .tiff images.")
     parser.add_argument(
         "--autopsy_path",
@@ -284,5 +310,10 @@ if __name__ == '__main__':
         dest="target_layer",
         default='fc7',
         help="Folder containing your trained CNN's checkpoint files.")
+    parser.add_argument(
+        "--save_npy",
+        dest="save_npy",
+        action='store_true',
+        help='Save a numpy of the data.')
     args = parser.parse_args()
     test_vgg16(**vars(args))

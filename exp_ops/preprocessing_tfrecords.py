@@ -209,6 +209,7 @@ def extract_to_tf_records(
         for idx, (f, l) in tqdm(
             enumerate(
                 zip(files, label_list)), total=len(files)):
+            import ipdb;ipdb.set_trace()
             r = get_image_ratio(
                 f,
                 ratio_list,
@@ -354,4 +355,3 @@ def find_timepoint(
     images = list(np_images[keep_idx])
     im_timepoints = im_timepoints[keep_idx]
     return images, im_timepoints
-
