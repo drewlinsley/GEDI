@@ -202,7 +202,6 @@ def test_vgg16(
         num_batches = np.floor(
             len(combined_files) / float(
                 config.validation_batch)).astype(int)
-        num_batches = 2
         for image_batch, file_batch in tqdm(
                 image_batcher(
                     start=0,

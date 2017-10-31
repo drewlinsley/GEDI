@@ -13,8 +13,8 @@ from gedi_config import GEDIconfig
 from models import baseline_vgg16 as vgg16
 from sklearn.pipeline import make_pipeline
 from sklearn.svm import LinearSVC
-from sklearn import preprocessing
-from sklearn.model_selection import cross_val_score
+from sklearn import preprocessing, metrics
+from sklearn.model_selection import cross_val_predict
 from tqdm import tqdm
 
 
@@ -222,16 +222,13 @@ def test_vgg16(
     # Run SVM
     svm = LinearSVC(C=C, dual=False, class_weight='balanced')
     clf = make_pipeline(preprocessing.StandardScaler(), svm)
-    cv_performance = cross_val_score(
+    predictions = cross_val_predict(
         clf, np.concatenate(dec_scores), y, cv=k_folds)
-    sd = np.std(cv_performance)
-    predictions = clf.predict(np.concatenate(dec_scores))
+    cv_performance = metrics.accuracy_score(predictions, y)
     p_value = randomization_test(y=y, yhat=predictions)
-    print '%s-fold SVM performance: mean accuracy = %s%% (SD = %s, SE = %s), p = %.5f' % (
+    print '%s-fold SVM performance: accuracy = %s%% , p = %.5f' % (
         k_folds,
         np.mean(cv_performance * 100),
-        sd,
-        sd / np.sqrt(k_folds),
         p_value)
     np.savez(
         os.path.join(out_dir, 'svm_data'),
@@ -240,7 +237,6 @@ def test_vgg16(
         scores=dec_scores,
         ckpts=ckpts,
         cv_performance=cv_performance,
-        sd=sd,
         p_value=p_value,
         k_folds=k_folds,
         C=C)
