@@ -120,8 +120,10 @@ def test_vgg16(
         raise RuntimeError('Could not find any files. Check your image path.')
 
     config = GEDIconfig()
+    model_file_path = model_file.split(os.path.sep)[0]
     meta_file_pointer = os.path.join(
-        model_file.split('/model')[0], 'train_maximum_value.npz')
+        model_file_path,
+        'train_maximum_value.npz')
     if not os.path.exists(meta_file_pointer):
         raise RuntimeError(
             'Cannot find the training data meta file.' +
