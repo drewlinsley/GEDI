@@ -90,8 +90,7 @@ def test_vgg16(image_dir, model_file, output_csv='prediction_file'):
         raise RuntimeError('Could not find any files. Check your image path.')
 
     config = GEDIconfig()
-    model_file_path = model_file.split(os.path.sep)[-1]
-    model_file_path = os.path.sep.join(model_file_path)
+    model_file_path = os.path.sep.join(model_file.split(os.path.sep)[:-1])
     meta_file_pointer = os.path.join(
         model_file_path,
         'train_maximum_value.npz')
