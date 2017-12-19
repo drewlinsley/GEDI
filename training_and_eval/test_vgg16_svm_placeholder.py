@@ -120,14 +120,16 @@ def test_vgg16(
         raise RuntimeError('Could not find any files. Check your image path.')
 
     config = GEDIconfig()
-    model_file_path = model_file.split(os.path.sep)[0]
+    model_file_path = os.path.sep.join(model_file.split(os.path.sep)[:-1])
     meta_file_pointer = os.path.join(
         model_file_path,
         'train_maximum_value.npz')
     if not os.path.exists(meta_file_pointer):
         raise RuntimeError(
-            'Cannot find the training data meta file.' +
-            'Download this from the link described in the README.md.')
+            'Cannot find the training data meta file: train_maximum_value.npz'
+            'Closest I could find from directory %s was %s.'
+            'Download this from the link described in the README.md.'
+            % (model_file_path, glob(os.path.join(model_file_path, '*.npz'))))
     meta_data = np.load(meta_file_pointer)
 
     # Prepare image normalization values
