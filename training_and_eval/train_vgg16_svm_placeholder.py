@@ -241,11 +241,6 @@ def test_vgg16(
         k_folds=k_folds,
         C=C)
 
-    # save the classifier
-    print 'Saving model to: %s' % svm_model
-    with open('%s.pkl' % svm_model, 'wb') as fid:
-        cPickle.dump(clf, fid)
-
     # Also save a csv with item/guess pairs
     try:
         trimmed_files = [re.split('/', x)[-1] for x in combined_files]
@@ -264,6 +259,11 @@ def test_vgg16(
         print 'X' * 60
         print 'Could not save a spreadsheet of file info'
         print 'X' * 60
+
+    # save the classifier
+    with open('%s.pkl' % svm_model, 'wb') as fid:
+        cPickle.dump(clf, fid)
+    print 'Saved svm model to: %s.pkl' % svm_model
 
 
 if __name__ == '__main__':

@@ -18,6 +18,8 @@ from sklearn import manifold
 from sklearn.decomposition import PCA
 
 
+# TODO: Do a Live/Dead autopsy
+
 def crop_center(img, crop_size):
     """Center crop an image."""
     x, y = img.shape[:2]
@@ -178,7 +180,7 @@ def test_vgg16(
 
     # Loop through each checkpoint then test the entire validation set
     ckpts = [model_file]
-    ckpt_yhat, ckpt_y, ckpt_scores, ckpt_file_array = [], [], [], []
+    ckpt_yhat, ckpt_scores, ckpt_file_array = [], [], []
     print '-' * 60
     print 'Beginning evaluation'
     print '-' * 60
