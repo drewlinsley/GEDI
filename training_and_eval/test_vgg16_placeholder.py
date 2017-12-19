@@ -97,9 +97,9 @@ def test_vgg16(image_dir, model_file, output_csv='prediction_file'):
     if not os.path.exists(meta_file_pointer):
         raise RuntimeError(
             'Cannot find the training data meta file: train_maximum_value.npz'
-            'Closest I could find was %s'
+            'Closest I could find from directory %s was %s.'
             'Download this from the link described in the README.md.'
-            % glob(os.path.join(model_file_path, '*.npz')))
+            % (model_file_path, glob(os.path.join(model_file_path, '*.npz'))))
     meta_data = np.load(meta_file_pointer)
 
     # Prepare image normalization values
