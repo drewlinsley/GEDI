@@ -162,8 +162,8 @@ def features_to_dict(
         label,
         image,
         filename,
-        ratio,
-        gedi_image,
+        ratio=None,
+        gedi_image=None,
         extra_image=None,
         ratio_placeholder=-1.):
     if ratio is None:
@@ -201,19 +201,13 @@ def extract_to_tf_records(
         config,
         k):
     print 'Building %s: %s' % (k, config.tfrecord_dir)
-    max_array = np.zeros(len(files))
-    min_array = np.zeros(len(files))
-    nan_images = np.zeros(len(files))
+    max_array = []
+    min_array = []
+    count = 0
     with tf.python_io.TFRecordWriter(output_pointer) as tfrecord_writer:
         for idx, (f, l) in tqdm(
             enumerate(
-                zip(files, label_list)), total=len(files)):
-            r = get_image_ratio(
-                f,
-                ratio_list,
-                timepoints=config.channel,
-                id_column=config.id_column,
-                regex_match=config.ratio_regex)
+                zip(files, label_list)), total=len(files) * 2):
             if isinstance(config.channel, list):
                 image = []
                 for c in config.channel:
@@ -227,7 +221,6 @@ def extract_to_tf_records(
                         matching=config.matching).astype(
                             np.float32)[None, :, :]]
                 image = np.concatenate(image)
-                l = (r > config.ratio_cutoff).astype(int)
             else:
                 image = produce_patch(
                     f,
@@ -237,64 +230,88 @@ def extract_to_tf_records(
                     max_value=config.max_gedi,
                     min_value=config.min_gedi,
                     matching=config.matching).astype(np.float32)
-            if np.isnan(image).sum() != 0:
-                nan_images[idx] = 1
-            if config.include_GEDI_in_tfrecords == False:
-                gedi_image = None
-            else:
-                if config.include_GEDI_in_tfrecords > 0:
-                    gedi_image = produce_patch(
-                        f,
-                        config.channel,
-                        2,
-                        divide_panel=config.divide_panel,
-                        max_value=config.max_gedi,
-                        min_value=config.min_gedi).astype(np.float32)
-                else:
-                    gedi_image = [produce_patch(
-                        f,
-                        config.channel + idx,
-                        2,
-                        divide_panel=config.divide_panel,
-                        max_value=config.max_gedi,
-                        min_value=config.min_gedi).astype(
-                            np.float32) for idx in range(
-                            config.include_GEDI_in_tfrecords)]
-            if config.extra_image:
-                extra_image = produce_patch(
-                    f,
-                    config.channel + 1,  # Hardcoded for now.
-                    config.panel,
-                    divide_panel=config.divide_panel,
-                    max_value=config.max_gedi,
-                    min_value=config.min_gedi).astype(np.float32)
-            else:
-                extra_image = None
-            max_array[idx] = np.max(image)
-            # construct the Example proto boject
-            feature_dict = features_to_dict(
-                label=l,
-                image=image,
-                filename=f,
-                ratio=r,
-                gedi_image=gedi_image,
-                extra_image=extra_image)
-            example = tf.train.Example(
-                # Example contains a Features proto object
-                features=tf.train.Features(
-                    # Features has a map of string to Feature proto objects
-                    feature=feature_dict
-                )
-            )
-            # use the proto object to serialize the example to a string
-            serialized = example.SerializeToString()
-            # write the serialized object to disk
-            tfrecord_writer.write(serialized)
 
+            if image.shape[-1] == config.gedi_image_size[1] * 3:
+
+                # Extract timepoint information
+                # 0 = dataset
+                # 1 = First panel timepoint
+                # 2 = Well
+                # 3 = Neuron number
+                # 4 = Second panel timepoint
+                # 5 - 17 = Third panel information
+                split_tokens = f.split(os.path.sep)[-1].split('_')
+
+                # Create two tfrecord entries - p1vp2 and p1vp3
+                p1 = np.expand_dims(
+                    image[:, :config.gedi_image_size[1]], axis=-1)
+                f1 = ''.join(i for i in split_tokens[1] if i.isdigit())
+                f1 = float(f1)
+                p2 = np.expand_dims(
+                    image[
+                        :,
+                        config.gedi_image_size[1]:config.gedi_image_size[1] * 2],
+                    axis=-1)
+                f2 = ''.join(i for i in split_tokens[4] if i.isdigit())
+                f2 = float(f2)
+                p3 = np.expand_dims(
+                    image[
+                        :,
+                        config.gedi_image_size[1] * 2:config.gedi_image_size[1] * 3
+                    ],
+                    axis=-1)
+                f1vf2d = f2 - f1
+                f1vf3d = -1.
+
+                # Create images
+                p1vp3 = np.concatenate([p1, p3], axis=-1)
+                p1vp2 = np.concatenate([p1, p2], axis=-1)
+
+                # SAME
+                max_array += [np.max(p1), np.max(p2)]
+                # construct the Example proto boject
+                feature_dict = features_to_dict(
+                    label=1,  # Same cells
+                    image=p1vp2,
+                    filename=f,
+                    ratio=f1vf2d)
+                example = tf.train.Example(
+                    # Example contains a Features proto object
+                    features=tf.train.Features(
+                        # Features has a map of string to Feature proto objects
+                        feature=feature_dict
+                    )
+                )
+                count += 1
+                # use the proto object to serialize the example to a string
+                serialized = example.SerializeToString()
+                # write the serialized object to disk
+                tfrecord_writer.write(serialized)
+
+                # DIFFERENT
+                max_array += [np.max(p1), np.max(p3)]
+                # construct the Example proto boject
+                feature_dict = features_to_dict(
+                    label=0,  # Different cells
+                    image=p1vp3,
+                    filename=f,
+                    ratio=f1vf3d)
+                example = tf.train.Example(
+                    # Example contains a Features proto object
+                    features=tf.train.Features(
+                        # Features has a map of string to Feature proto objects
+                        feature=feature_dict
+                    )
+                )
+                count += 1
+                # use the proto object to serialize the example to a string
+                serialized = example.SerializeToString()
+                # write the serialized object to disk
+                tfrecord_writer.write(serialized)
+            else:
+                print('Skipped image %s' % f)
     # Calculate ratio of +:-
-    lab_counts = np.asarray(
-        [np.sum(label_list == 0), np.sum(label_list == 1)]).astype(float)
-    ratio = lab_counts / np.asarray((len(label_list))).astype(float)
+    ratio = [.5, .5]
     print 'Data ratio is %s' % ratio
     np.savez(
         os.path.join(

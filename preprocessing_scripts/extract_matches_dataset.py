@@ -6,19 +6,16 @@ from gedi_config import GEDIconfig
 from glob import glob
 from exp_ops.tf_fun import make_dir
 from exp_ops.preprocessing_tfrecords import write_label_list, sample_files, \
-    write_label_file, flatten_list, find_label, find_timepoint
-from exp_ops.preprocessing_tfrecords import extract_to_tf_records as vtf
-from exp_ops.preprocessing_tfrecords_next_frames import extract_to_tf_records
+    write_label_file, find_label, find_timepoint
+from exp_ops.preprocessing_tfrecords_matching import extract_to_tf_records
 
 
 def get_image_dict(config):
     # gather file names of images to process
     im_lists = dict()
     for fl in config.tvt_flags:
-        it_files = [x for x in config.raw_im_dirs if fl in x]
-        im_lists[fl] = flatten_list(
-            [glob(os.path.join(config.home_dir, r, '*' + config.raw_im_ext))
-                for r in it_files])
+        it_dir = '%s_%s' % (config.raw_im_dirs[0], fl)
+        im_lists[fl] = glob(os.path.join(it_dir, '*' + config.raw_im_ext))
     return im_lists
 
 
@@ -72,12 +69,6 @@ def extract_tf_records_from_GEDI_tiffs():
             os.path.join(ratio_file))
     else:
         ratio_list = None
-
-    # Allow option for per-timestep image extraction
-    if config.timestep_delta_frames:
-        extraction = extract_to_tf_records
-    else:
-        extraction = vtf
 
     # Make dirs if they do not exist
     dir_list = [
@@ -141,7 +132,7 @@ def extract_tf_records_from_GEDI_tiffs():
         output_pointer = os.path.join(
             config.tfrecord_dir, '%s%s.tfrecords' % (
                 config.tvt_flags, tf_flag))
-        extraction(
+        extract_to_tf_records(
             files=files,
             label_list=label_list,
             output_pointer=output_pointer,
@@ -155,7 +146,7 @@ def extract_tf_records_from_GEDI_tiffs():
             output_pointer = os.path.join(
                 config.tfrecord_dir, '%s%s.tfrecords' % (
                     tf_flag, config.tf_record_names[k]))
-            extraction(
+            extract_to_tf_records(
                 files=files,
                 label_list=label_list,
                 output_pointer=output_pointer,
