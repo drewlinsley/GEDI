@@ -8,7 +8,6 @@ from glob import glob
 from exp_ops.tf_fun import make_dir
 from exp_ops.preprocessing_GEDI_images import produce_patch
 from gedi_config import GEDIconfig
-import ipdb;ipdb.set_trace()
 from models import baseline_vgg16 as vgg16
 from matplotlib import pyplot as plt
 from tqdm import tqdm
@@ -41,7 +40,7 @@ def save_images(
         correct = iy == iyhat
         target_label = iy == target
         f = plt.figure()
-        plt.imshow(iviz)
+        plt.imshow(iviz.squeeze())
         it_f = ifiles.split('/')[-1].split('\.')[0]
         if correct and target_label:
             # TP
@@ -61,12 +60,6 @@ def save_images(
                 it_folder,
                 '%s%s' % (it_f, ext)))
         plt.close(f)
-
-
-def make_dir(d):
-    """Make directory d if it does not exist."""
-    if not os.path.exists(d):
-        os.makedirs(d)
 
 
 def visualization_function(images, viz):
@@ -137,7 +130,8 @@ def image_batcher(
             image_stack += [patch[None, :, :, :]]
         # Add dimensions and concatenate
         start += config.validation_batch
-        yield np.concatenate(image_stack, axis=0), label_stack, next_image_batch
+        yield np.concatenate(
+            image_stack, axis=0), label_stack, next_image_batch
 
 
 def randomization_test(y, yhat, iterations=10000):

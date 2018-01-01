@@ -207,7 +207,7 @@ def extract_to_tf_records(
     with tf.python_io.TFRecordWriter(output_pointer) as tfrecord_writer:
         for idx, (f, l) in tqdm(
             enumerate(
-                zip(files, label_list)), total=len(files) * 2):
+                zip(files, label_list)), total=len(files)):
             if isinstance(config.channel, list):
                 image = []
                 for c in config.channel:
