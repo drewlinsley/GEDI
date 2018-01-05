@@ -8,7 +8,7 @@
    * These are your ImageNet pretrained VGG16 weights. In the config, these are pointed to with `self.vgg16_weight_path`.
 2a. https://mega.nz/#F!pHRF2TrT!EM52TFSkqKov-X8W_WAHxg
    * These are the weight files and meta data for a CNN trained to discriminate between live/dead cells (with GEDI ground-truth). 
-2b. https://mega.nz/#!29kmkJRD
+2b. https://mega.nz/#!29kmkJRD!Gak03yjvdFEw-w6k93wg0jxOyXryN7VEaCjh-2mKOvk
    * This is the GEDI model saved into a numpy.
 
 ## Last but not least, copy the 'gedi_config.py.template' file as 'gedi_config.py' and adjust it to match your system.

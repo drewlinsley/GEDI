@@ -4,13 +4,24 @@ import tensorflow as tf
 
 class model_struct:
     """
-    A trainable model for matching.
+    A trainable version VGG16.
     """
 
-    def __init__(self, trainable=True):
-        self.data_dict = None
+    def __init__(
+                self, vgg16_npy_path=None, trainable=True,
+                fine_tune_layers=None):
+        if vgg16_npy_path is not None:
+            self.data_dict = np.load(vgg16_npy_path, encoding='latin1').item()
+            # pop the specified keys from the weights that will be loaded
+            if fine_tune_layers is not None:
+                for key in fine_tune_layers:
+                    del self.data_dict[key]
+        else:
+            self.data_dict = None
+
         self.var_dict = {}
         self.trainable = trainable
+        self.VGG_MEAN = [103.939, 116.779, 123.68]
 
     def __getitem__(self, name):
         return getattr(self, name)
@@ -18,40 +29,100 @@ class model_struct:
     def __contains__(self, name):
         return hasattr(self, name)
 
-    def build(self, rgb, output_shape=32):  # 4900):
+    def build(self, im0, im1, output_shape=None, train_mode=None, batchnorm=None):
+        self.run(
+            im0,
+            output_shape=output_shape,
+            train_mode=train_mode,
+            batchnorm=batchnorm,
+            tower_num=0)
+
+    def run(self, rgb, output_shape=None, train_mode=None, batchnorm=None, tower_num=0):
         """
-        Build the model.
+        load variable from npy to build the VGG
 
         :param rgb: rgb image [batch, height, width, 3] values scaled [0, 1]
+        :param train_mode: a bool tensor, usually a placeholder:
+        :if True, dropout will be turned on
         """
+        if output_shape is None:
+            output_shape = 1000
+
         rgb_scaled = rgb * 255.0  # Scale up to imagenet's uint8
-        input_bgr = tf.identity(rgb_scaled, name="matching_input")
-        self.conv1_1 = self.conv_layer(input_bgr, 1, 64, "mconv1_1")
-        self.conv1_2 = self.conv_layer(self.conv1_1, 64, 64, "mconv1_2")
-        self.pool1 = self.max_pool(self.conv1_2, 'mpool1')
 
-        # R1
-        self.conv2_1 = self.conv_layer(self.pool1, 64, 128, "mconv2_1")
-        self.conv2_2 = self.conv_layer(self.conv2_1, 128, 128, "mconv2_2")
-        self.conv2_3 = self.conv_layer(self.conv2_2, 128, 128, "mconv2_3")
-        self.merge_2 = self.conv2_1 + self.conv2_3
-        self.pool2 = self.max_pool(self.merge_2, 'mpool2')
+        # Convert RGB to BGR
+        red, green, blue = tf.split(axis=3, num_or_size_splits=3, value=rgb_scaled)
+        assert red.get_shape().as_list()[1:] == [224, 224, 1]
+        assert green.get_shape().as_list()[1:] == [224, 224, 1]
+        assert blue.get_shape().as_list()[1:] == [224, 224, 1]
+        bgr = tf.concat(axis=3, values=[
+            blue - self.VGG_MEAN[0],
+            green - self.VGG_MEAN[1],
+            red - self.VGG_MEAN[2],
+        ], name='bgr')
 
-        # R2
-        self.conv3_1 = self.conv_layer(self.pool2, 128, 256, "mconv3_1")
-        self.conv3_2 = self.conv_layer(self.conv3_1, 256, 256, "mconv3_2")
-        self.conv3_3 = self.conv_layer(self.conv3_2, 256, 256, "mconv3_3")
-        self.merge_3 = self.conv3_1 + self.conv3_3
-        self.pool3 = self.max_pool(self.merge_3, 'mpool2')
+        assert bgr.get_shape().as_list()[1:] == [224, 224, 3]
+        input_bgr = tf.identity(bgr, name="lrp_input")
+        self.conv1_1 = self.conv_layer(input_bgr, 3, 64, "conv1_1")
+        self.conv1_2 = self.conv_layer(self.conv1_1, 64, 64, "conv1_2")
+        self.pool1 = self.max_pool(self.conv1_2, 'pool1')
 
-        # FC output
-        flattened_pool3 = tf.contrib.layers.flatten(self.pool3)
-        in_dims = int(flattened_pool3.get_shape()[-1])
-        self.output = self.fc_layer(flattened_pool3, in_dims, 4096, "moutput")
-        self.output = tf.nn.selu(self.output)
-        self.output = tf.nn.dropout(self.output, 0.5)
+        self.conv2_1 = self.conv_layer(self.pool1, 64, 128, "conv2_1")
+        self.conv2_2 = self.conv_layer(self.conv2_1, 128, 128, "conv2_2")
+        self.pool2 = self.max_pool(self.conv2_2, 'pool2')
+
+        self.conv3_1 = self.conv_layer(self.pool2, 128, 256, "conv3_1")
+        self.conv3_2 = self.conv_layer(self.conv3_1, 256, 256, "conv3_2")
+        self.conv3_3 = self.conv_layer(self.conv3_2, 256, 256, "conv3_3")
+        self.pool3 = self.max_pool(self.conv3_3, 'pool3')
+
+        self.conv4_1 = self.conv_layer(self.pool3, 256, 512, "conv4_1")
+        self.conv4_2 = self.conv_layer(self.conv4_1, 512, 512, "conv4_2")
+        self.conv4_3 = self.conv_layer(self.conv4_2, 512, 512, "conv4_3")
+        self.pool4 = self.max_pool(self.conv4_3, 'pool4')
+
+        self.conv5_1 = self.conv_layer(
+            self.pool4, 512, 512, "conv5_1", batchnorm)
+        self.conv5_2 = self.conv_layer(
+            self.conv5_1, 512, 512, "conv5_2", batchnorm)
+        self.conv5_3 = self.conv_layer(
+            self.conv5_2, 512, 512, "conv5_3", batchnorm)
+        self.pool5 = self.max_pool(self.conv5_3, 'pool5')
+
+        # 25088 = ((224 / (2 ** 5)) ** 2) * 512
+        self.fc6 = self.fc_layer(self.pool5, 25088, 4096, "fc6")
+        self.relu6 = tf.nn.relu(self.fc6)
+        # Consider changing these to numpy conditionals
+        if train_mode is not None:
+            self.relu6 = tf.cond(
+                train_mode,
+                lambda: tf.nn.dropout(self.relu6, 0.5), lambda: self.relu6)
+        elif self.trainable:
+            self.relu6 = tf.nn.dropout(self.relu6, 0.5)
+        if batchnorm is not None:
+            if 'fc6' in batchnorm:
+                self.relu6 = self.batchnorm(self.relu6)
+
+        self.fc7 = self.fc_layer(self.relu6, 4096, 4096, "fc7")
+        self.relu7 = tf.nn.relu(self.fc7)
+        if train_mode is not None:
+            self.relu7 = tf.cond(
+                train_mode,
+                lambda: tf.nn.dropout(self.relu7, 0.5), lambda: self.relu7)
+        elif self.trainable:
+            self.relu7 = tf.nn.dropout(self.relu7, 0.5)
+        if batchnorm is not None:
+            if 'fc7' in batchnorm:
+                self.relu7 = self.batchnorm(self.relu7)
+
+        self.fc8 = self.fc_layer(self.relu7, 4096, output_shape, "fc8")
+        if batchnorm is not None:
+            if 'fc8' in batchnorm:
+                self.fc8 = self.batchnorm(self.fc8)
+        final = tf.identity(self.fc8, name="lrp_output")
+        self.prob = tf.nn.softmax(final, name="prob")
+
         self.data_dict = None
-        return self.output
 
     def batchnorm(self, layer):
         m, v = tf.nn.moments(layer, [0])
@@ -76,7 +147,7 @@ class model_struct:
 
             conv = tf.nn.conv2d(bottom, filt, [1, 1, 1, 1], padding='SAME')
             bias = tf.nn.bias_add(conv, conv_biases)
-            relu = tf.nn.selu(bias)
+            relu = tf.nn.relu(bias)
 
             if batchnorm is not None:
                 if name in batchnorm:

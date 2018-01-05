@@ -18,7 +18,7 @@ class model_struct:
     def __contains__(self, name):
         return hasattr(self, name)
 
-    def build(self, rgb, output_shape=32):  # 4900):
+    def build(self, rgb, output_shape=128):
         """
         Build the model.
 
@@ -31,23 +31,23 @@ class model_struct:
         self.pool1 = self.max_pool(self.conv1_2, 'mpool1')
 
         # R1
-        self.conv2_1 = self.conv_layer(self.pool1, 64, 128, "mconv2_1")
-        self.conv2_2 = self.conv_layer(self.conv2_1, 128, 128, "mconv2_2")
-        self.conv2_3 = self.conv_layer(self.conv2_2, 128, 128, "mconv2_3")
+        self.conv2_1 = self.conv_layer(self.pool1, 64, 96, "mconv2_1")
+        self.conv2_2 = self.conv_layer(self.conv2_1, 96, 96, "mconv2_2")
+        self.conv2_3 = self.conv_layer(self.conv2_2, 96, 96, "mconv2_3")
         self.merge_2 = self.conv2_1 + self.conv2_3
         self.pool2 = self.max_pool(self.merge_2, 'mpool2')
 
         # R2
-        self.conv3_1 = self.conv_layer(self.pool2, 128, 256, "mconv3_1")
-        self.conv3_2 = self.conv_layer(self.conv3_1, 256, 256, "mconv3_2")
-        self.conv3_3 = self.conv_layer(self.conv3_2, 256, 256, "mconv3_3")
+        self.conv3_1 = self.conv_layer(self.pool2, 96, 128, "mconv3_1")
+        self.conv3_2 = self.conv_layer(self.conv3_1, 128, 128, "mconv3_2")
+        self.conv3_3 = self.conv_layer(self.conv3_2, 128, 128, "mconv3_3")
         self.merge_3 = self.conv3_1 + self.conv3_3
         self.pool3 = self.max_pool(self.merge_3, 'mpool2')
 
         # FC output
         flattened_pool3 = tf.contrib.layers.flatten(self.pool3)
         in_dims = int(flattened_pool3.get_shape()[-1])
-        self.output = self.fc_layer(flattened_pool3, in_dims, 4096, "moutput")
+        self.output = self.fc_layer(flattened_pool3, in_dims, output_shape, "moutput")
         self.output = tf.nn.selu(self.output)
         self.output = tf.nn.dropout(self.output, 0.5)
         self.data_dict = None
