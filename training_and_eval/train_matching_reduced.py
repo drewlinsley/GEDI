@@ -6,39 +6,21 @@ import numpy as np
 from datetime import datetime
 from argparse import ArgumentParser
 from exp_ops.data_loader_matching import inputs
-from exp_ops.tf_fun import make_dir, softmax_cost, fine_tune_prepare_layers, \
-    class_accuracy
+from exp_ops.tf_fun import make_dir, fine_tune_prepare_layers
 from gedi_config import GEDIconfig
-from models import reduced_matching_gedi as matching_gedi
-from models import baseline_vgg16 as vgg16
+from models import reduced_matching_gedi_big as matching_gedi
+# from models import baseline_vgg16 as vgg16
 
 
-def prep_images_for_gedi(
-        images,
-        res_size=[300, 300],
-        crop_size=[224, 224]):
-    """Resize images to [300, 300] and then crop to [224, 224]."""
-    if int(images.get_shape()[-1]) < 3:
-        images = tf.concat(
-            [images, images, images],
-            axis=-1)
-    images = tf.image.resize_images(images, res_size)
-    images = tf.map_fn(
-        lambda img: tf.image.resize_image_with_crop_or_pad(
-            img,
-            crop_size[0],
-            crop_size[1]),
-        images)
-    return images
+def l2_dist(x, y, axis=None):
+    """L2 distance in tensorflow."""
+    if axis is None:
+        return tf.norm(x - y, ord='euclidean')
+    else:
+        return tf.norm(x - y, ord='euclidean', axis=axis)
 
 
-def min_max_norm(x, eps=0.001):
-    min_val = tf.reduce_min(x, reduction_indices=[1, 2, 3], keep_dims=True)
-    max_val = tf.reduce_max(x, reduction_indices=[1, 2, 3], keep_dims=True)
-    return (x - min_val) / (max_val - min_val + eps)
-
-
-def train_model(train_dir=None, validation_dir=None):
+def train_model(train_dir=None, validation_dir=None, debug=True):
     config = GEDIconfig()
     if train_dir is None:  # Use globals
         train_data = os.path.join(
@@ -63,14 +45,14 @@ def train_model(train_dir=None, validation_dir=None):
         else:
             print 'Normalizing with empirical max.'
         if 'min_array' in meta_data.keys():
-            min_value = np.min(meta_data['min_array']).astype(np.float32)
+            # min_value = np.min(meta_data['min_array']).astype(np.float32)
             print 'Normalizing with empirical min.'
         else:
-            min_value = None
+            # min_value = None
             print 'Not normalizing with a min.'
     else:
         max_value = config.max_gedi
-        min_value = config.min_gedi
+        # min_value = config.min_gedi
     ratio = meta_data['ratio']
     print 'Ratio is: %s' % ratio
 
@@ -105,31 +87,35 @@ def train_model(train_dir=None, validation_dir=None):
     assert os.path.exists(validation_data)
     assert os.path.exists(config.vgg16_weight_path)
     with tf.device('/cpu:0'):
-        train_images_0, train_images_1, train_labels, train_times = inputs(
+        train_images, train_labels, train_times = inputs(
             train_data,
             config.train_batch,
             im_shape,
-            config.model_image_size[:2],
-            max_value=max_value,
-            min_value=min_value,
+            config.model_image_size,
+            # max_value=max_value,
+            # min_value=min_value,
             train=config.data_augmentations,
             num_epochs=config.epochs,
             normalize=config.normalize,
             return_filename=True)
-        val_images_0, val_images_1, val_labels, val_times = inputs(
+        val_images, val_labels, val_times = inputs(
             validation_data,
             config.validation_batch,
             im_shape,
-            config.model_image_size[:2],
-            max_value=max_value,
-            min_value=min_value,
+            config.model_image_size,
+            # max_value=max_value,
+            # min_value=min_value,
             num_epochs=config.epochs,
             normalize=config.normalize,
             return_filename=True)
-        tf.summary.image('train image frame 0', train_images_0)
-        tf.summary.image('train image frame 1', train_images_1)
-        tf.summary.image('validation image frame 0', val_images_0)
-        tf.summary.image('validation image frame 1', val_images_1)
+        train_image_list, val_image_list = [], []
+        for idx in range(int(train_images.get_shape()[1])):
+            train_image_list += [tf.gather(train_images, idx, axis=1)]
+            val_image_list += [tf.gather(val_images, idx, axis=1)]
+            tf.summary.image(
+                'train_image_frame_%s' % idx, train_image_list[idx])
+            tf.summary.image(
+                'validation_image_frame_%s' % idx, val_image_list[idx])
 
     # Prepare model on GPU
     with tf.device('/gpu:0'):
@@ -137,66 +123,42 @@ def train_model(train_dir=None, validation_dir=None):
         with tf.variable_scope('match'):
             # Build matching model for frame 0
             model_0 = matching_gedi.model_struct()
-            frame_0 = model_0.build(train_images_0)
-
-            # Build output layer
-            if config.matching_combine == 'concatenate':
-                output_shape = [int(frame_0.get_shape()[-1]) * 2, 2]
-            elif config.matching_combine == 'subtract':
-                output_shape = [int(frame_0.get_shape()[-1]), 2]
-            else:
-                raise RuntimeError
+            frame_activity = []
+            frame_activity += [tf.nn.l2_normalize(
+                model_0.build(train_image_list[0]), 0, 1e-12)]
 
         with tf.variable_scope('match', reuse=tf.AUTO_REUSE):
-            # Build matching model for frame 1
-            frame_1 = model_0.build(train_images_1)
+            # Build matching model for other frames
+            for idx in range(1, len(train_image_list)):
+                frame_activity += [tf.nn.l2_normalize(
+                    model_0.build(train_image_list[idx]), 0, 1e-12)]
 
-        with tf.variable_scope('output'):
-            # Concatenate or subtract
-            if config.matching_combine == 'concatenate':
-                output_scores = tf.concat([frame_0, frame_1], axis=-1)
-            elif config.matching_combine == 'subtract':
-                output_scores = frame_0 - frame_1
-            else:
-                raise NotImplementedError
+        pos = l2_dist(frame_activity[0], frame_activity[1], axis=1)
+        neg = l2_dist(frame_activity[0], frame_activity[2], axis=1)
+        # loss = tf.reduce_mean(tf.pow(pos - neg + 0.2, 2))
+        loss = tf.reduce_mean(tf.maximum(pos - neg + 0.01, 0.))
+        # loss = tf.reduce_mean(tf.nn.relu(1 - (neg / (pos + 0.2)))) * 100
+        tf.summary.scalar('Triplet_loss', loss)
 
-            # Build output layer
-            output_shape = [int(output_scores.get_shape()[-1]), 2]
-            output_weights = tf.get_variable(
-                name='output_weights',
-                shape=output_shape,
-                initializer=tf.contrib.layers.xavier_initializer(
-                    uniform=False))
-            output_bias = tf.get_variable(
-                name='output_bias',
-                initializer=tf.truncated_normal([output_shape[-1]], .0, .001))
-            decision_logits = tf.nn.bias_add(
-                tf.matmul(
-                    output_scores,
-                    output_weights), output_bias)
-            train_soft_decisions = tf.nn.softmax(decision_logits)
-            cost = softmax_cost(
-                decision_logits,
-                train_labels)
-            tf.summary.scalar("cce loss", cost)
-            cost += tf.nn.l2_loss(output_weights)
-
-            # Weight decay
-            if config.wd_layers is not None:
-                _, l2_wd_layers = fine_tune_prepare_layers(
-                    tf.trainable_variables(), config.wd_layers)
-                l2_wd_layers = [
-                    x for x in l2_wd_layers if 'biases' not in x.name]
-                if len(l2_wd_layers) > 0:
-                    cost += (config.wd_penalty * tf.add_n(
-                        [tf.nn.l2_loss(x) for x in l2_wd_layers]))
+        # Weight decay
+        if config.wd_layers is not None:
+            _, l2_wd_layers = fine_tune_prepare_layers(
+                tf.trainable_variables(), config.wd_layers)
+            l2_wd_layers = [
+                x for x in l2_wd_layers if 'biases' not in x.name]
+            if len(l2_wd_layers) > 0:
+                loss += (config.wd_penalty * tf.add_n(
+                    [tf.nn.l2_loss(x) for x in l2_wd_layers]))
 
         # Optimize
-        train_op = tf.train.AdamOptimizer(config.new_lr).minimize(cost)
-        train_accuracy = class_accuracy(
-            train_soft_decisions,
-            train_labels)  # training accuracy
-        tf.summary.scalar("training accuracy", train_accuracy)
+        train_op = tf.train.AdamOptimizer(config.new_lr).minimize(loss)
+        train_accuracy = tf.reduce_mean(
+            tf.cast(
+                tf.equal(
+                    tf.nn.relu(tf.sign(neg - pos)),  # 1 if pos < neg
+                    tf.cast(tf.ones_like(train_labels), tf.float32)),
+                tf.float32))
+        tf.summary.scalar('training_accuracy', train_accuracy)
 
         # Setup validation op
         if validation_data is not False:
@@ -204,50 +166,34 @@ def train_model(train_dir=None, validation_dir=None):
                 # Build matching model for frame 0
                 match.reuse_variables()
                 val_model_0 = matching_gedi.model_struct()
-                val_model_0.build(val_images_0)
+                val_frame_activity = []
+                val_frame_activity += [tf.nn.l2_normalize(
+                    val_model_0.build(val_image_list[0]), 1, 1e-12) ]
 
-                # Build matching model for frame 1
-                val_model_1 = matching_gedi.model_struct()
-                val_model_1.build(val_images_1)
+                # Build matching model for other frames
+                for idx in range(1, len(train_image_list)):
+                    val_frame_activity += [
+                        tf.nn.l2_normalize(
+                            val_model_0.build(
+                                val_image_list[idx]), 1, 1e-12)]
 
-            # Build frame 0 and frame 1 vectors
-            val_frame_0 = val_model_0.output
-            val_frame_1 = val_model_1.output
-
-            # Concatenate or subtract
-            if config.matching_combine == 'concatenate':
-                val_output_scores = tf.concat(
-                    [val_frame_0, val_frame_1], axis=-1)
-            elif config.matching_combine == 'subtract':
-                val_output_scores = val_frame_0 - val_frame_1
-            else:
-                raise NotImplementedError
-
-            with tf.variable_scope('output', tf.AUTO_REUSE) as opt:
-                # Build output layer
-                opt.reuse_variables()
-                val_output_weights = tf.get_variable(
-                    name='output_weights',
-                    shape=output_shape,
-                    trainable=False,
-                    initializer=tf.contrib.layers.xavier_initializer(
-                        uniform=False))
-                val_output_bias = tf.get_variable(
-                    name='output_bias',
-                    trainable=False,
-                    initializer=tf.truncated_normal(
-                        [output_shape[-1]], .0, .001))
-                val_decision_logits = tf.nn.bias_add(
-                    tf.matmul(
-                        val_output_scores,
-                        val_output_weights), val_output_bias)
-                val_soft_decisions = tf.nn.softmax(val_decision_logits)
+            val_pos = l2_dist(
+                val_frame_activity[0], val_frame_activity[1], axis=1)
+            val_neg = l2_dist(
+                val_frame_activity[0], val_frame_activity[2], axis=1)
+            # val_loss = tf.reduce_mean(tf.pow(val_pos - val_neg + 0.2, 2))
+            val_loss = tf.reduce_mean(tf.maximum(val_pos - val_neg + 0.01, 0.))
+            # val_loss = tf.reduce_mean(tf.nn.relu(1 - (val_neg / (val_pos + 0.2)))) * 100
+            tf.summary.scalar('Validation_triplet_loss', val_loss)
 
             # Calculate validation accuracy
-            val_accuracy = class_accuracy(
-                val_soft_decisions,
-                val_labels)
-            tf.summary.scalar("validation accuracy", val_accuracy)
+        val_accuracy = tf.reduce_mean(
+            tf.cast(
+                tf.equal(
+                    tf.nn.relu(tf.sign(val_neg - val_pos)), # 1 if pos < neg
+                    tf.cast(tf.ones_like(val_labels), tf.float32)),
+                tf.float32))
+        tf.summary.scalar('val_accuracy', val_accuracy)
 
     # Set up summaries and saver
     saver = tf.train.Saver(
@@ -267,6 +213,24 @@ def train_model(train_dir=None, validation_dir=None):
     coord = tf.train.Coordinator()
     threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
+    # Train operations
+    train_dict = {
+        'train_op': train_op,
+        'loss': loss,
+        'pos': pos,
+        'neg': neg,
+        'train_accuracy': train_accuracy,
+        'val_accuracy': val_accuracy,
+    }
+    val_dict = {
+        'val_accuracy': val_accuracy
+    }
+    if debug:
+        for idx in range(len(train_image_list)):
+            train_dict['train_im_%s' % idx] = train_image_list[idx]
+        for idx in range(len(val_image_list)):
+            val_dict['val_im_%s' % idx] = val_image_list[idx]
+
     # Start training loop
     np.save(out_dir + 'meta_info', config)
     step, losses = 0, []  # val_max = 0
@@ -274,16 +238,21 @@ def train_model(train_dir=None, validation_dir=None):
         # print response
         while not coord.should_stop():
             start_time = time.time()
-            _, loss_value, train_acc, val_acc = sess.run(
-                [train_op, cost, train_accuracy, val_accuracy])
-            losses += [loss_value]
+            train_values = sess.run(train_dict.values())
+            it_train_dict = {k: v for k, v in zip(
+                train_dict.keys(), train_values)}
+            losses += [it_train_dict['loss']]
             duration = time.time() - start_time
-            if np.isnan(loss_value).sum():
-                assert not np.isnan(loss_value), 'Model loss = NaN'
+            if np.isnan(it_train_dict['loss']).sum():
+                assert not np.isnan(it_train_dict['loss']),\
+                    'Model loss = NaN'
 
             if step % config.validation_steps == 0:
                 if validation_data is not False:
-                    val_acc = sess.run(val_accuracy)
+                    val_values = sess.run(val_dict.values())
+                    it_val_dict = {k: v for k, v in zip(
+                        val_dict.keys(), val_values)}
+                    val_acc = it_val_dict['val_accuracy']
                 else:
                     val_acc -= 1  # Store every checkpoint
 
@@ -298,9 +267,14 @@ def train_model(train_dir=None, validation_dir=None):
                     'Validation accuracy = %s | '
                     'logdir = %s')
                 print (format_str % (
-                    datetime.now(), step, loss_value,
-                    config.train_batch / duration, float(duration),
-                    train_acc, val_acc, summary_dir))
+                    datetime.now(),
+                    step,
+                    it_train_dict['loss'],
+                    config.train_batch / duration,
+                    float(duration),
+                    it_train_dict['train_accuracy'],
+                    it_train_dict['val_accuracy'],
+                    summary_dir))
 
                 # Save the model checkpoint if it's the best yet
                 if 1:  # val_acc >= val_max:
@@ -314,11 +288,14 @@ def train_model(train_dir=None, validation_dir=None):
             else:
                 # Training status
                 format_str = ('%s: step %d, loss = %.2f (%.1f examples/sec; '
-                              '%.3f sec/batch) | Training accuracy = %s | '
-                              'Training loss = %s')
-                print (format_str % (datetime.now(), step, loss_value,
-                                     config.train_batch / duration,
-                                     float(duration), train_acc, loss_value))
+                              '%.3f sec/batch) | Training accuracy = %s | ')
+                print (format_str % (
+                    datetime.now(),
+                    step,
+                    it_train_dict['loss'],
+                    config.train_batch / duration,
+                    float(duration),
+                    it_train_dict['train_accuracy']))
             # End iteration
             step += 1
 

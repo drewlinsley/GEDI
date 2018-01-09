@@ -50,15 +50,26 @@ class model_struct:
         self.merge_4 = self.conv4_1 + self.conv4_3  #  + self.conv4_3
         self.pool4 = self.max_pool(self.merge_4, 'mpool4')
 
+        # Combine for multiscale
+        target_layers = ['pool2', 'pool3', 'pool4']
+        target_shape = [int(x) for x in self.pool2.get_shape()]
+        conv_activities = [tf.image.resize_images(self[x], target_shape[1:3]) for x in target_layers]
+        conv_activities =  tf.concat(conv_activities, axis=-1)
+
         # FC output
-        flattened_pool4 = tf.contrib.layers.flatten(self.pool4)
-        in_dims = int(flattened_pool4.get_shape()[-1])
-        self.pre_output = self.fc_layer(
-            flattened_pool4, in_dims, output_shape * 2, "moutput")
+        # flattened_pool4 = tf.contrib.layers.flatten(conv_activities)  # self.pool4)
+        # in_dims = int(flattened_pool4.get_shape()[-1])
+        in_dims = int(conv_activities.get_shape()[-1])
+        # self.pre_output = self.fc_layer(
+        #     flattened_pool4, in_dims, output_shape * 2, "moutput")
+        self.pre_output = self.conv_layer(conv_activities, in_dims, output_shape // 4, 'poutput', filter_size=1)
         self.pre_output = tf.nn.selu(self.pre_output)
         self.pre_output = tf.nn.dropout(self.pre_output, 0.5)
+        self.pool5 = self.max_pool(self.pre_output, 'pool5')
+        flattened_pool5 = tf.contrib.layers.flatten(self.pool5)
+        in_dims = int(flattened_pool5.get_shape()[-1])
         self.output = self.fc_layer(
-            self.pre_output, output_shape * 2, output_shape, "poutput")
+            flattened_pool5, in_dims, output_shape, "moutput")
         self.output = tf.nn.selu(self.output)
         self.output = tf.nn.dropout(self.output, 0.5)
         self.data_dict = None
@@ -83,7 +94,7 @@ class model_struct:
                     out_channels, name, batchnorm=None, filter_size=5):
         with tf.variable_scope(name):
             filt, conv_biases = self.get_conv_var(
-                5, in_channels, out_channels, name)
+                filter_size, in_channels, out_channels, name)
 
             conv = tf.nn.conv2d(bottom, filt, [1, 1, 1, 1], padding='SAME')
             bias = tf.nn.bias_add(conv, conv_biases)

@@ -3,7 +3,6 @@ import tensorflow as tf
 import numpy as np
 from scipy import misc
 from glob import glob
-from tensorflow.python.ops import control_flow_ops
 
 
 def apply_crop(image, target, h_min, w_min, h_max, w_max):
@@ -94,7 +93,8 @@ def read_and_decode(
         min_value=None,
         num_channels=2,
         return_filename=False,
-        normalize=False):
+        normalize=False,
+        num_panels=3):
     reader = tf.TFRecordReader()
     _, serialized_example = reader.read(filename_queue)
     features = {
@@ -113,21 +113,10 @@ def read_and_decode(
     image = tf.decode_raw(features['image'], tf.float32)
 
     # Need to reconstruct channels first then transpose channels
-    matching_im_size = im_size[:2] + [2]
-    res_image = tf.reshape(image, np.asarray(matching_im_size)[[2, 0, 1]])
-    image = tf.transpose(res_image, [2, 1, 0])
+    image = tf.reshape(image, np.asarray(im_size))
 
     # Split the images
-    split_image = tf.split(image, 2, axis=2)
-    if max_value is None:
-        max_value = tf.reduce_max(image, keep_dims=True)
-    else:
-        max_value = np.asarray(max_value)[None, None, None]
-
-    if normalize:  # If we want to ensure all images are [0, 1]
-        for idx, im in enumerate(split_image):
-            split_image[idx] = im / tf.reduce_max(max_value, keep_dims=True)
-            split_image[idx] = tf.squeeze(split_image[idx])
+    split_image = tf.split(image, num_panels, axis=-1)
 
     # Insert augmentation and preprocessing here
     if train is not None:
@@ -159,17 +148,44 @@ def read_and_decode(
                 im = tf.image.random_brightness(
                     im, max_delta=0.1)
                 split_image[idx] = im
+        if 'random_crop' in train:
+            for idx, im in enumerate(split_image):
+                im = tf.random_crop(
+                    im, model_input_shape)
+                split_image[idx] = im
+        else:
+            for idx, im in enumerate(split_image):
+                im = tf.image.resize_image_with_crop_or_pad(
+                    im, model_input_shape[0], model_input_shape[1])
+                split_image[idx] = im
+    else:
+        for idx, im in enumerate(split_image):
+            im = tf.image.resize_image_with_crop_or_pad(
+                im, model_input_shape[0], model_input_shape[1])
+            split_image[idx] = im
+
+
+    # if max_value is None:
+    #     max_value = tf.reduce_max(
+    #         image,
+    #         reduction_indices=[0, 1])
+    # else:
+    #     if len(max_value) < int(image.get_shape())[-1]:
+    #         max_value = max_value.repeat(int(image.get_shape()[-1]))
+    #     max_value = np.asarray(max_value)[None, None, None]
 
     # Make sure to clip values to [0, 1]
     for idx, im in enumerate(split_image):
-        im = tf.clip_by_value(tf.cast(im, tf.float32), 0.0, 1.0)
-        split_image[idx] = im
+        if normalize:  # If we want to ensure all images are [0, 1]
+            im = im / tf.reduce_max(im, keep_dims=True)
+            im = tf.clip_by_value(tf.cast(im, tf.float32), 0.0, 1.0)
+            split_image[idx] = im
 
     # Convert label from a scalar uint8 tensor to an int32 scalar.
     label = tf.cast(features['label'], tf.int32)
 
     if return_filename:
-        filename = tf.decode_raw(features['filename'], tf.float32)
+        # filename = tf.decode_raw(features['filename'], tf.float32)
         # filename = tf.reshape(filename, [])
         return split_image, label, label  # TODO: fix this filename
     else:
@@ -186,7 +202,7 @@ def inputs(
         max_value=None,
         min_value=None,
         return_filename=False,
-        normalize=False):
+        normalize=True):
     with tf.name_scope('input'):
         filename_queue = tf.train.string_input_producer(
             [tfrecord_file],
@@ -203,16 +219,10 @@ def inputs(
             min_value=min_value,
             return_filename=return_filename,
             normalize=normalize)
-        images_0, sparse_labels, filenames = tf.train.shuffle_batch(
-            [image[0], label, files],
+        images, sparse_labels, filenames = tf.train.shuffle_batch(
+            [image, label, files],
             batch_size=batch_size,
             num_threads=2,
             capacity=1000 + 3 * batch_size,
             min_after_dequeue=1000)
-        images_1, _, _ = tf.train.shuffle_batch(
-            [image[1], label, files],
-            batch_size=batch_size,
-            num_threads=2,
-            capacity=1000 + 3 * batch_size,
-            min_after_dequeue=1000)
-        return images_0, images_1, sparse_labels, filenames
+        return images, sparse_labels, filenames

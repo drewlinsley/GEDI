@@ -32,33 +32,33 @@ class model_struct:
 
         # R1
         self.conv2_1 = self.conv_layer(self.pool1, 64, 96, "mconv2_1")
-        self.conv2_2 = self.conv_layer(self.conv2_1, 96, 96, "mconv2_2") #  + self.conv2_1
-        self.conv2_3 = self.conv_layer(self.conv2_2, 96, 96, "mconv2_3") #  + self.conv2_2 + self.conv2_1
-        self.merge_2 = self.conv2_1 + self.conv2_3 #  + self.conv2_3
+        self.conv2_2 = self.conv_layer(self.conv2_1, 96, 96, "mconv2_2") + self.conv2_1
+        self.conv2_3 = self.conv_layer(self.conv2_2, 96, 96, "mconv2_3") + self.conv2_2 + self.conv2_1
+        self.merge_2 = self.conv2_1 + self.conv2_2 + self.conv2_3
         self.pool2 = self.max_pool(self.merge_2, 'mpool2')
 
         # R2
         self.conv3_1 = self.conv_layer(self.pool2, 96, 128, "mconv3_1")
-        self.conv3_2 = self.conv_layer(self.conv3_1, 128, 128, "mconv3_2") #  + self.conv3_1
-        self.conv3_3 = self.conv_layer(self.conv3_2, 128, 128, "mconv3_3") #  + self.conv3_1 + self.conv3_2
-        self.merge_3 = self.conv3_1 + self.conv3_3  #  + self.conv3_3
+        self.conv3_2 = self.conv_layer(self.conv3_1, 128, 128, "mconv3_2") + self.conv3_1
+        self.conv3_3 = self.conv_layer(self.conv3_2, 128, 128, "mconv3_3") + self.conv3_1 + self.conv3_2
+        self.merge_3 = self.conv3_1 + self.conv3_2 + self.conv3_3
         self.pool3 = self.max_pool(self.merge_3, 'mpool3')
 
         self.conv4_1 = self.conv_layer(self.pool3, 128, 128, "mconv4_1")
-        self.conv4_2 = self.conv_layer(self.conv4_1, 128, 128, "mconv4_2") #  + self.conv4_1
-        self.conv4_3 = self.conv_layer(self.conv4_2, 128, 128, "mconv4_3") #  + self.conv4_1 + self.conv4_2
-        self.merge_4 = self.conv4_1 + self.conv4_3  #  + self.conv4_3
+        self.conv4_2 = self.conv_layer(self.conv4_1, 128, 128, "mconv4_2") + self.conv4_1
+        self.conv4_3 = self.conv_layer(self.conv4_2, 128, 128, "mconv4_3") + self.conv4_1 + self.conv4_2
+        self.merge_4 = self.conv4_1 + self.conv4_2 + self.conv4_3
         self.pool4 = self.max_pool(self.merge_4, 'mpool4')
 
         # FC output
         flattened_pool4 = tf.contrib.layers.flatten(self.pool4)
         in_dims = int(flattened_pool4.get_shape()[-1])
         self.pre_output = self.fc_layer(
-            flattened_pool4, in_dims, output_shape * 2, "moutput")
+            flattened_pool4, in_dims, 512, "moutput")
         self.pre_output = tf.nn.selu(self.pre_output)
         self.pre_output = tf.nn.dropout(self.pre_output, 0.5)
         self.output = self.fc_layer(
-            self.pre_output, output_shape * 2, output_shape, "poutput")
+            self.pre_output, 512, output_shape, "poutput")
         self.output = tf.nn.selu(self.output)
         self.output = tf.nn.dropout(self.output, 0.5)
         self.data_dict = None

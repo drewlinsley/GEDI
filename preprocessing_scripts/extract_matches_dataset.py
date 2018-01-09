@@ -4,18 +4,38 @@ import numpy as np
 import pandas as pd
 from gedi_config import GEDIconfig
 from glob import glob
+from glob2 import glob as glob2
 from exp_ops.tf_fun import make_dir
 from exp_ops.preprocessing_tfrecords import write_label_list, sample_files, \
     write_label_file, find_label, find_timepoint
-from exp_ops.preprocessing_tfrecords_matching import extract_to_tf_records
+from exp_ops.preprocessing_tfrecords_matching_tri import extract_to_tf_records
+from tqdm import tqdm
 
 
-def get_image_dict(config):
+def get_image_dict(config, splits=[.9, 1]):
     # gather file names of images to process
     im_lists = dict()
-    for fl in config.tvt_flags:
-        it_dir = '%s_%s' % (config.raw_im_dirs[0], fl)
-        im_lists[fl] = glob(os.path.join(it_dir, '*' + config.raw_im_ext))
+    if config.multi_dirs is None:
+        for fl in config.tvt_flags:
+            it_dir = '%s_%s' % (config.raw_im_dirs[0], fl)
+            im_lists[fl] = glob(
+                os.path.join(it_dir, '*%s' % config.raw_im_ext))
+    else:
+        dfiles = []
+        for d in tqdm(config.raw_im_dirs, total=len(config.raw_im_dirs)):
+            dfiles += [glob2(os.path.join(d, '**', '*%s' % config.raw_im_ext))]
+        dfiles = np.asarray([item for sublist in dfiles for item in sublist])
+        if len(config.tvt_flags) == 3 and len(splits) == 2:
+            diff = splits[-1] - splits[0]
+            splits[-1] = splits[0] + diff / 2
+            splits += [splits[-1] + diff / 2]
+        cvs = []
+        for idx in range(len(splits)):
+            cvs += [np.round(splits[idx] * len(dfiles)).astype(int)]
+        start = 0
+        for idx, fl in enumerate(config.tvt_flags):
+            im_lists[fl] = dfiles[start:cvs[idx]]
+            start = cvs[idx]
     return im_lists
 
 
@@ -130,7 +150,7 @@ def extract_tf_records_from_GEDI_tiffs():
         files = im_lists[config.tvt_flags]
         label_list = im_labels[config.tvt_flags]
         output_pointer = os.path.join(
-            config.tfrecord_dir, '%s%s.tfrecords' % (
+            config.tfrecord_dir, '%s%s' % (
                 config.tvt_flags, tf_flag))
         extract_to_tf_records(
             files=files,
