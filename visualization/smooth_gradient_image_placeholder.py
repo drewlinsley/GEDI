@@ -179,7 +179,10 @@ def visualize_model(
     if not os.path.exists(meta_file_pointer):
         raise RuntimeError(
             'Cannot find the training data meta file.'
-            'Download this from the link described in the README.md.')
+            'Looking in %s'
+            'Make sure this exists.'
+            'Otherwise download from the link described in the README.md.' % 
+                model_file_pointer)
     meta_data = np.load(meta_file_pointer)
 
     # Prepare image normalization values
