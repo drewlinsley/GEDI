@@ -8,7 +8,6 @@ from glob import glob
 from exp_ops.tf_fun import make_dir
 from exp_ops.preprocessing_GEDI_images import produce_patch
 from gedi_config import GEDIconfig
-import ipdb;ipdb.set_trace()
 from models import baseline_vgg16 as vgg16
 from matplotlib import pyplot as plt
 from tqdm import tqdm
@@ -61,12 +60,6 @@ def save_images(
                 it_folder,
                 '%s%s' % (it_f, ext)))
         plt.close(f)
-
-
-def make_dir(d):
-    """Make directory d if it does not exist."""
-    if not os.path.exists(d):
-        os.makedirs(d)
 
 
 def visualization_function(images, viz):
@@ -184,7 +177,8 @@ def visualize_model(
         model_file.split('/model')[0], 'train_maximum_value.npz')
     if not os.path.exists(meta_file_pointer):
         raise RuntimeError(
-            'Cannot find the training data meta file. Download this from the link described in the README.md.')
+            'Cannot find the training data meta file.'
+            'Download this from the link described in the README.md.')
     meta_data = np.load(meta_file_pointer)
 
     # Prepare image normalization values
@@ -239,7 +233,7 @@ def visualize_model(
     print '-' * 60
 
     if config.validation_batch > len(combined_files):
-        print 'Trimming validation_batch size to %s (same as # of files).' % len(
+        print 'Trimming validation_batch to %s (same as # of files).' % len(
             combined_files)
         config.validation_batch = len(combined_files)
 
@@ -285,9 +279,22 @@ def visualize_model(
                     grad_image,
                     feed_dict=feed_dict)
                 it_grads += it_grad[0]
-            import ipdb;ipdb.set_trace()
             it_grads /= smooth_iterations  # Mean across iterations
             it_grads = visualization_function(it_grads, viz)
+
+            # Save the grads
+            for grad_i, pred_i, file_i, label_i in zip(
+                    it_grads, tyh, file_batch, label_batch):
+                out_pointer = os.path.join(
+                    output_folder,
+                    file_batch.split(os.path.sep)[-1])
+                f = plt.figure()
+                plt.imshow(it_grads)
+                plt.title('Pred=%s, label=%s' % (tyh, label_batch))
+                plt.savefig(out_pointer)
+                plt.close(f)
+
+            # Store the results
             dec_scores += [sc]
             yhat = np.append(yhat, tyh)
             y = np.append(y, label_batch)
@@ -312,18 +319,18 @@ def visualize_model(
         combined_files=ckpt_file_array,
         ckpt_viz_images=ckpt_viz_images)
 
-    # Save images
-    save_images(
-        y=ckpt_y,
-        yhat=ckpt_yhat,
-        viz=ckpt_viz_images,
-        files=ckpt_file_array,
-        output_folder=output_folder,
-        target='dead',
-        label_dict={
-            'live': 0,
-            'dead': 1
-        })
+    # # Save images
+    # save_images(
+    #     y=ckpt_y,
+    #     yhat=ckpt_yhat,
+    #     viz=ckpt_viz_images,
+    #     files=ckpt_file_array,
+    #     output_folder=output_folder,
+    #     target='dead',
+    #     label_dict={
+    #         'live': 0,
+    #         'dead': 1
+    #     })
 
 
 if __name__ == '__main__':
