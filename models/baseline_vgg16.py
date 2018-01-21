@@ -43,7 +43,10 @@ class model_struct:
         rgb_scaled = rgb * 255.0  # Scale up to imagenet's uint8
 
         # Convert RGB to BGR
-        red, green, blue = tf.split(axis=3, num_or_size_splits=3, value=rgb_scaled)
+        if int(rgb.get_shape()[-1]) == 1:
+            red, green, blue = rgb_scaled, rgb_scaled, rgb_scaled
+        else:
+            red, green, blue = tf.split(axis=3, num_or_size_splits=3, value=rgb_scaled)
         assert red.get_shape().as_list()[1:] == [224, 224, 1]
         assert green.get_shape().as_list()[1:] == [224, 224, 1]
         assert blue.get_shape().as_list()[1:] == [224, 224, 1]
@@ -115,6 +118,7 @@ class model_struct:
         self.prob = tf.nn.softmax(final, name="prob")
 
         self.data_dict = None
+        return self.fc8
 
     def batchnorm(self, layer):
         m, v = tf.nn.moments(layer, [0])

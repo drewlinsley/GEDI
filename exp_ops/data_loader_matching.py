@@ -148,15 +148,24 @@ def read_and_decode(
                 im = tf.image.random_brightness(
                     im, max_delta=0.1)
                 split_image[idx] = im
-        if 'random_crop' in train:
+        if 'random_crop' in train and 'resize' not in train:
             for idx, im in enumerate(split_image):
                 im = tf.random_crop(
                     im, model_input_shape)
                 split_image[idx] = im
-        else:
+        if 'resize' in train:
             for idx, im in enumerate(split_image):
-                im = tf.image.resize_image_with_crop_or_pad(
-                    im, model_input_shape[0], model_input_shape[1])
+                im = tf.image.resize_images(
+                    im, model_input_shape[:2])
+                split_image[idx] = im
+        else:
+            # for idx, im in enumerate(split_image):
+            #     im = tf.image.resize_image_with_crop_or_pad(
+            #         im, model_input_shape[0], model_input_shape[1])
+            #     split_image[idx] = im
+            for idx, im in enumerate(split_image):
+                im = tf.image.resize_images(
+                    im, model_input_shape[:2])
                 split_image[idx] = im
     else:
         for idx, im in enumerate(split_image):
