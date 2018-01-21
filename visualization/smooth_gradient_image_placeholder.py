@@ -40,7 +40,7 @@ def save_images(
         correct = iy == iyhat
         target_label = iy == target
         f = plt.figure()
-        plt.imshow(iviz)
+        plt.imshow(iviz.squeeze())
         it_f = ifiles.split('/')[-1].split('\.')[0]
         if correct and target_label:
             # TP
@@ -130,7 +130,8 @@ def image_batcher(
             image_stack += [patch[None, :, :, :]]
         # Add dimensions and concatenate
         start += config.validation_batch
-        yield np.concatenate(image_stack, axis=0), label_stack, next_image_batch
+        yield np.concatenate(
+            image_stack, axis=0), label_stack, next_image_batch
 
 
 def randomization_test(y, yhat, iterations=10000):

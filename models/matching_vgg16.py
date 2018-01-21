@@ -58,34 +58,34 @@ class model_struct:
 
         assert bgr.get_shape().as_list()[1:] == [224, 224, 3]
         input_bgr = tf.identity(bgr, name="lrp_input")
-        self.conv1_1 = self.conv_layer(input_bgr, 3, 64, "conv1_1")
-        self.conv1_2 = self.conv_layer(self.conv1_1, 64, 64, "conv1_2")
+        self.conv1_1 = self.conv_layer(input_bgr, 3, 64, "conv1_1", trainable=False)
+        self.conv1_2 = self.conv_layer(self.conv1_1, 64, 64, "conv1_2", trainable=False)
         self.pool1 = self.max_pool(self.conv1_2, 'pool1')
 
-        self.conv2_1 = self.conv_layer(self.pool1, 64, 128, "conv2_1")
-        self.conv2_2 = self.conv_layer(self.conv2_1, 128, 128, "conv2_2")
+        self.conv2_1 = self.conv_layer(self.pool1, 64, 128, "conv2_1", trainable=False)
+        self.conv2_2 = self.conv_layer(self.conv2_1, 128, 128, "conv2_2", trainable=False)
         self.pool2 = self.max_pool(self.conv2_2, 'pool2')
 
-        self.conv3_1 = self.conv_layer(self.pool2, 128, 256, "conv3_1")
-        self.conv3_2 = self.conv_layer(self.conv3_1, 256, 256, "conv3_2")
-        self.conv3_3 = self.conv_layer(self.conv3_2, 256, 256, "conv3_3")
+        self.conv3_1 = self.conv_layer(self.pool2, 128, 256, "conv3_1", trainable=False)
+        self.conv3_2 = self.conv_layer(self.conv3_1, 256, 256, "conv3_2", trainable=False)
+        self.conv3_3 = self.conv_layer(self.conv3_2, 256, 256, "conv3_3", trainable=False)
         self.pool3 = self.max_pool(self.conv3_3, 'pool3')
 
-        self.conv4_1 = self.conv_layer(self.pool3, 256, 512, "conv4_1")
-        self.conv4_2 = self.conv_layer(self.conv4_1, 512, 512, "conv4_2")
-        self.conv4_3 = self.conv_layer(self.conv4_2, 512, 512, "conv4_3")
+        self.conv4_1 = self.conv_layer(self.pool3, 256, 512, "conv4_1", trainable=False)
+        self.conv4_2 = self.conv_layer(self.conv4_1, 512, 512, "conv4_2", trainable=False)
+        self.conv4_3 = self.conv_layer(self.conv4_2, 512, 512, "conv4_3", trainable=False)
         self.pool4 = self.max_pool(self.conv4_3, 'pool4')
 
         self.conv5_1 = self.conv_layer(
-            self.pool4, 512, 512, "conv5_1", batchnorm)
+            self.pool4, 512, 512, "conv5_1", batchnorm, trainable=False)
         self.conv5_2 = self.conv_layer(
-            self.conv5_1, 512, 512, "conv5_2", batchnorm)
+            self.conv5_1, 512, 512, "conv5_2", batchnorm, trainable=False)
         self.conv5_3 = self.conv_layer(
-            self.conv5_2, 512, 512, "conv5_3", batchnorm)
+            self.conv5_2, 512, 512, "conv5_3", batchnorm, trainable=False)
         self.pool5 = self.max_pool(self.conv5_3, 'pool5')
 
         # 25088 = ((224 / (2 ** 5)) ** 2) * 512
-        self.fc6 = self.fc_layer(self.pool5, 25088, 4096, "fc6")
+        self.fc6 = self.fc_layer(self.pool5, 25088, 4096, "fc6", trainable=False)
         self.relu6 = tf.nn.relu(self.fc6)
         # Consider changing these to numpy conditionals
         if train_mode is not None:
@@ -98,7 +98,7 @@ class model_struct:
             if 'fc6' in batchnorm:
                 self.relu6 = self.batchnorm(self.relu6)
 
-        self.fc7 = self.fc_layer(self.relu6, 4096, 4096, "fc7")
+        self.fc7 = self.fc_layer(self.relu6, 4096, 4096, "fc7", trainable=False)
         self.relu7 = tf.nn.relu(self.fc7)
         if train_mode is not None:
             self.relu7 = tf.cond(
@@ -109,16 +109,27 @@ class model_struct:
         if batchnorm is not None:
             if 'fc7' in batchnorm:
                 self.relu7 = self.batchnorm(self.relu7)
+        self.vgg_fc = tf.nn.relu(self.fc_layer(self.fc7, 4096, 32, 'vgg_fc', trainable=False))
 
-        self.fc8 = self.fc_layer(self.relu7, 4096, output_shape, "fc8")
-        if batchnorm is not None:
-            if 'fc8' in batchnorm:
-                self.fc8 = self.batchnorm(self.fc8)
-        final = tf.identity(self.fc8, name="lrp_output")
-        self.prob = tf.nn.softmax(final, name="prob")
-
+        # Next create a atrous conv model w/ VGG features
+        self.a1 = self.dconv_layer(self.pool2, 128, 128, 'a1')
+        self.a1_1 = self.conv_layer(self.a1, 128, 128, 'a1_1')
+        self.a1_2 = self.conv_layer(self.a1_1, 128, 128, 'a1_2') + self.a1
+        self.a2 = self.dconv_layer(self.a1_2, 128, 128, 'a2')
+        self.a2_1 = self.conv_layer(self.a2, 128, 128, 'a2_1') 
+        self.a2_2 = self.conv_layer(self.a2_1, 128, 128, 'a2_2') + self.a2
+        self.a3 = self.dconv_layer(self.a2_2, 128, 256, 'a3')
+        self.a3_1 = self.conv_layer(self.a3, 256, 256, 'a3_1')
+        self.a3_2 = self.conv_layer(self.a3_1, 256, 256, 'a3_2') + self.a3
+        self.poolfc1 = self.max_pool(self.a3_2, 'poolfc1')
+        self.fc1 = self.conv_layer(self.poolfc1, 256, 128, 'f1', filter_size=1)
+        self.poolfc2 = self.max_pool(self.fc1, 'poolfc2')
+        self.fc2 = self.conv_layer(self.poolfc2, 128, 32, 'f2', filter_size=1)
+        self.poolfc3 = self.max_pool(self.fc2, 'poolfc3')
+        self.flat_fc2 = tf.contrib.layers.flatten(self.poolfc3)
+        self.output = tf.concat([self.vgg_fc, self.flat_fc2], axis=-1)
         self.data_dict = None
-        return self.fc8
+        return self.output
 
     def batchnorm(self, layer):
         m, v = tf.nn.moments(layer, [0])
@@ -136,10 +147,10 @@ class model_struct:
 
     def conv_layer(
                     self, bottom, in_channels,
-                    out_channels, name, batchnorm=None):
+                    out_channels, name, batchnorm=None, filter_size=3, trainable=True):
         with tf.variable_scope(name):
             filt, conv_biases = self.get_conv_var(
-                3, in_channels, out_channels, name)
+                filter_size, in_channels, out_channels, name, trainable=trainable)
 
             conv = tf.nn.conv2d(bottom, filt, [1, 1, 1, 1], padding='SAME')
             bias = tf.nn.bias_add(conv, conv_biases)
@@ -151,9 +162,26 @@ class model_struct:
 
             return relu
 
-    def fc_layer(self, bottom, in_size, out_size, name):
+    def dconv_layer(
+                    self, bottom, in_channels,
+                    out_channels, name, batchnorm=None, trainable=True):
         with tf.variable_scope(name):
-            weights, biases = self.get_fc_var(in_size, out_size, name)
+            filt, conv_biases = self.get_conv_var(
+                3, in_channels, out_channels, name, trainable=trainable)
+
+            conv = tf.nn.atrous_conv2d(bottom, filt, 2, padding='SAME')
+            bias = tf.nn.bias_add(conv, conv_biases)
+            relu = tf.nn.relu(bias)
+
+            if batchnorm is not None:
+                if name in batchnorm:
+                    relu = self.batchnorm(relu)
+
+            return relu
+
+    def fc_layer(self, bottom, in_size, out_size, name, trainable=True):
+        with tf.variable_scope(name):
+            weights, biases = self.get_fc_var(in_size, out_size, name, trainable=trainable)
 
             x = tf.reshape(bottom, [-1, in_size])
             fc = tf.nn.bias_add(tf.matmul(x, weights), biases)
@@ -162,7 +190,7 @@ class model_struct:
 
     def get_conv_var(
             self, filter_size, in_channels, out_channels,
-            name, init_type='xavier'):
+            name, init_type='xavier', trainable=True):
         if init_type == 'xavier':
             weight_init = [
                 [filter_size, filter_size, in_channels, out_channels],
@@ -172,12 +200,12 @@ class model_struct:
                 [filter_size, filter_size, in_channels, out_channels],
                 0.0, 0.001)
         bias_init = tf.truncated_normal([out_channels], .0, .001)
-        filters = self.get_var(weight_init, name, 0, name + "_filters")
-        biases = self.get_var(bias_init, name, 1, name + "_biases")
+        filters = self.get_var(weight_init, name, 0, name + "_filters", trainable=trainable)
+        biases = self.get_var(bias_init, name, 1, name + "_biases", trainable=trainable)
 
         return filters, biases
 
-    def get_fc_var(self, in_size, out_size, name, init_type='xavier'):
+    def get_fc_var(self, in_size, out_size, name, init_type='xavier', trainable=True):
         if init_type == 'xavier':
             weight_init = [
                 [in_size, out_size],
@@ -186,14 +214,14 @@ class model_struct:
             weight_init = tf.truncated_normal(
                 [in_size, out_size], 0.0, 0.001)
         bias_init = tf.truncated_normal([out_size], .0, .001)
-        weights = self.get_var(weight_init, name, 0, name + "_weights")
-        biases = self.get_var(bias_init, name, 1, name + "_biases")
+        weights = self.get_var(weight_init, name, 0, name + "_weights", trainable=trainable)
+        biases = self.get_var(bias_init, name, 1, name + "_biases", trainable=trainable)
 
         return weights, biases
 
     def get_var(
             self, initial_value, name, idx,
-            var_name, in_size=None, out_size=None):
+            var_name, in_size=None, out_size=None, trainable=True):
         if self.data_dict is not None and name in self.data_dict:
             value = self.data_dict[name][idx]
         else:
@@ -203,9 +231,9 @@ class model_struct:
             # get_variable, change the boolian to numpy
             if type(value) is list:
                 var = tf.get_variable(
-                    name=var_name, shape=value[0], initializer=value[1])
+                    name=var_name, shape=value[0], initializer=value[1], trainable=trainable)
             else:
-                var = tf.get_variable(name=var_name, initializer=value)
+                var = tf.get_variable(name=var_name, initializer=value, trainable=trainable)
         else:
             var = tf.constant(value, dtype=tf.float32, name=var_name)
 
