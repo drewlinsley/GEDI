@@ -174,15 +174,16 @@ def visualize_model(
         raise RuntimeError('Could not find any files. Check your image path.')
 
     config = GEDIconfig()
+    model_file_path = os.path.sep.join(model_file.split(os.path.sep)[:-1])
     meta_file_pointer = os.path.join(
-        model_file.split('/model')[0], 'train_maximum_value.npz')
+        model_file_path,
+        'train_maximum_value.npz')
     if not os.path.exists(meta_file_pointer):
         raise RuntimeError(
-            'Cannot find the training data meta file.'
-            'Looking in %s'
-            'Make sure this exists.'
-            'Otherwise download from the link described in the README.md.' % 
-                meta_file_pointer)
+            'Cannot find the training data meta file: train_maximum_value.npz'
+            'Closest I could find from directory %s was %s.'
+            'Download this from the link described in the README.md.'
+            % (model_file_path, glob(os.path.join(model_file_path, '*.npz'))))
     meta_data = np.load(meta_file_pointer)
 
     # Prepare image normalization values
@@ -355,7 +356,7 @@ if __name__ == '__main__':
         "--model_file",
         type=str,
         dest="model_file",
-        default='/Users/drewlinsley/Desktop/trained_gedi_model/model_58600.ckpt-58600',
+        default='/Users/nickjermey/GEDI/models/trained_gedi_model/model_58600.ckpt-58600',
         help="Folder containing your trained CNN's checkpoint files.")
     parser.add_argument(
         "--untargeted",
