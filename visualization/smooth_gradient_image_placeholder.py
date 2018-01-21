@@ -182,7 +182,7 @@ def visualize_model(
             'Looking in %s'
             'Make sure this exists.'
             'Otherwise download from the link described in the README.md.' % 
-                model_file_pointer)
+                meta_file_pointer)
     meta_data = np.load(meta_file_pointer)
 
     # Prepare image normalization values
