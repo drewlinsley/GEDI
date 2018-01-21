@@ -123,7 +123,7 @@ def test_vgg16(image_dir, model_file, output_csv='prediction_file'):
     # Prepare model on GPU
     with tf.device('/gpu:0'):
         with tf.variable_scope('cnn'):
-            vgg = vgg16.Vgg16(
+            vgg = vgg16.model_struct(
                 vgg16_npy_path=config.vgg16_weight_path,
                 fine_tune_layers=config.fine_tune_layers)
             vgg.build(
