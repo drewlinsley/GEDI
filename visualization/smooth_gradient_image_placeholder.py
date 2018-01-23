@@ -211,7 +211,7 @@ def visualize_model(
     # Prepare model on GPU
     with tf.device('/gpu:0'):
         with tf.variable_scope('cnn'):
-            vgg = vgg16.Vgg16(
+            vgg = vgg16.model_struct(
                 vgg16_npy_path=config.vgg16_weight_path,
                 fine_tune_layers=config.fine_tune_layers)
             vgg.build(
@@ -292,10 +292,11 @@ def visualize_model(
                     it_grads, tyh, file_batch, label_batch):
                 out_pointer = os.path.join(
                     output_folder,
-                    file_batch.split(os.path.sep)[-1])
+                    file_i.split(os.path.sep)[-1])
+                out_pointer = out_pointer.split('.')[0] + '.png'
                 f = plt.figure()
-                plt.imshow(it_grads)
-                plt.title('Pred=%s, label=%s' % (tyh, label_batch))
+                plt.imshow(grad_i)
+                plt.title('Pred=%s, label=%s' % (pred_i, label_batch))
                 plt.savefig(out_pointer)
                 plt.close(f)
 
