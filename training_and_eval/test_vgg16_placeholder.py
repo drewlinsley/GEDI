@@ -134,7 +134,6 @@ def test_vgg16(image_dir, model_file, output_csv='prediction_file'):
         scores = vgg.prob
         preds = tf.argmax(vgg.prob, 1)
 
-    import ipdb;ipdb.set_trace()
     # Set up saver
     saver = tf.train.Saver(tf.global_variables())
 
