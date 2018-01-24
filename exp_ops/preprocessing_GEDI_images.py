@@ -88,9 +88,10 @@ def produce_patch(
         if len(im.shape) > 2:
             im = im[channel]
         else:
+            im = im.squeeze()
             print(
-                'Warning: Image has no slices.'
-                'If a single time point was passed, ignore this message.')
+                'Warning: Image has no slices. '
+                'Image size is %s.' % str(im.shape))
     patch = get_patch(im, panel).astype(np.float32)
     if max_value is None:
         max_value = np.max(patch)
