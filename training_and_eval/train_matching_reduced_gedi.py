@@ -12,6 +12,10 @@ from gedi_config import GEDIconfig
 from models import matching_vgg16 as vgg16
 
 
+def l2_normalize(x, axis=0, eps=1e-12):
+    return tf.nn.l2_normalize(x, axis, eps)
+
+
 def l2_dist(x, y, axis=None):
     """L2 distance in tensorflow."""
     if axis is None:
@@ -20,11 +24,25 @@ def l2_dist(x, y, axis=None):
         return tf.norm(x - y, ord='euclidean', axis=axis)
 
 
+def pearson_dist(x, y, axis=None, eps=1e-8, tau=1e-4):
+    x_mean = tf.reduce_mean(x, keep_dims=True, axis=[-1]) + eps
+    y_mean = tf.reduce_mean(y, keep_dims=True, axis=[-1]) + eps
+    x_flat_normed = x - x_mean
+    y_flat_normed = y - y_mean
+    count = int(y.get_shape()[-1])
+    cov = tf.div(
+        tf.reduce_sum(tf.multiply(x_flat_normed, y_flat_normed), -1), count)
+    x_std = tf.sqrt(tf.div(tf.reduce_sum(tf.square(x - x_mean), -1), count))
+    y_std = tf.sqrt(tf.div(tf.reduce_sum(tf.square(y - y_mean), -1), count))
+    corr = cov/(tf.multiply(x_std, y_std) + tau)
+    return 1. - corr
+
+
 def train_model(
         train_dir=None,
         validation_dir=None,
         debug=True,
-        margin=10):
+        margin=.1):
     config = GEDIconfig()
     assert margin is not None, 'Need a margin for the loss.'
     if train_dir is None:  # Use globals
@@ -123,28 +141,46 @@ def train_model(
                 'validation_image_frame_%s' % idx, val_image_list[idx])
 
     # Prepare model on GPU
+    config.l2_norm = False
+    config.dist_fun = 'pearson'
+    config.per_batch = False
+    config.include_GEDI = False
+    config.output_shape = 32
     with tf.device('/gpu:0'):
-
         with tf.variable_scope('match'):
             # Build matching model for frame 0
             model_0 = vgg16.model_struct(
                 vgg16_npy_path=config.gedi_weight_path)  # ,
-                # fine_tune_layers=config.fine_tune_layers)
             frame_activity = []
-            frame_activity += [tf.nn.l2_normalize(
-                model_0.build(train_image_list[0], output_shape=128), 0, 1e-12)]
+            model_activity = model_0.build(
+                train_image_list[0],
+                output_shape=config.output_shape,
+                include_GEDI=config.include_GEDI)
+            if config.l2_norm:
+                model_activity = [model_activity]
+            frame_activity += [model_activity]
 
         with tf.variable_scope('match', reuse=tf.AUTO_REUSE):
             # Build matching model for other frames
             for idx in range(1, len(train_image_list)):
-                frame_activity += [tf.nn.l2_normalize(
-                    model_0.build(train_image_list[idx], output_shape=128), 0, 1e-12)]
+                model_activity = model_0.build(
+                    train_image_list[idx],
+                    output_shape=config.output_shape,
+                    include_GEDI=config.include_GEDI)
+                if config.l2_norm:
+                    model_activity = l2_normalize(model_activity)
+                frame_activity += [model_activity]
 
-        pos = l2_dist(frame_activity[0], frame_activity[1], axis=1)
-        neg = l2_dist(frame_activity[0], frame_activity[2], axis=1)
-        # loss = tf.reduce_mean(tf.pow(pos - neg + 0.2, 2))
-        loss = tf.reduce_mean(tf.maximum(pos - neg + margin, 0.))
-        # loss = tf.reduce_mean(tf.nn.relu(1 - (neg / (pos + 0.2)))) * 100
+        if config.dist_fun == 'l2':
+            pos = l2_dist(frame_activity[0], frame_activity[1], axis=1)
+            neg = l2_dist(frame_activity[0], frame_activity[2], axis=1)
+        elif config.dist_fun == 'pearson':
+            pos = pearson_dist(frame_activity[0], frame_activity[1], axis=1)
+            neg = pearson_dist(frame_activity[0], frame_activity[2], axis=1)
+        if config.per_batch:
+            loss = tf.maximum(tf.reduce_mean(pos - neg) + margin, 0.)
+        else:
+            loss = tf.reduce_mean(tf.maximum(pos - neg + margin, 0.))
         tf.summary.scalar('Triplet_loss', loss)
 
         # Weight decay
@@ -173,32 +209,48 @@ def train_model(
                 # Build matching model for frame 0
                 match.reuse_variables()
                 val_model_0 = vgg16.model_struct(
-                    vgg16_npy_path=config.gedi_weight_path)  # ,
-                    # fine_tune_layers=config.fine_tune_layers)
+                    vgg16_npy_path=config.gedi_weight_path)
                 val_frame_activity = []
-                val_frame_activity += [tf.nn.l2_normalize(
-                    val_model_0.build(val_image_list[0], output_shape=128), 1, 1e-12) ]
+                model_activity = val_model_0.build(
+                    val_image_list[0],
+                    output_shape=config.output_shape,
+                    include_GEDI=config.include_GEDI)
+                if config.l2_norm:
+                    model_activity = l2_normalize(model_activity)
+                val_frame_activity += [model_activity]
 
                 # Build matching model for other frames
                 for idx in range(1, len(train_image_list)):
-                    val_frame_activity += [
-                        tf.nn.l2_normalize(
-                            val_model_0.build(
-                                val_image_list[idx], output_shape=128), 1, 1e-12)]
-            val_pos = l2_dist(
-                val_frame_activity[0], val_frame_activity[1], axis=1)
-            val_neg = l2_dist(
-                val_frame_activity[0], val_frame_activity[2], axis=1)
-            # val_loss = tf.reduce_mean(tf.pow(val_pos - val_neg + 0.2, 2))
-            val_loss = tf.reduce_mean(tf.maximum(val_pos - val_neg + margin, 0.))
-            # val_loss = tf.reduce_mean(tf.nn.relu(1 - (val_neg / (val_pos + 0.2)))) * 100
+                    model_activity = val_model_0.build(
+                        val_image_list[idx],
+                        output_shape=config.output_shape,
+                        include_GEDI=config.include_GEDI)
+                    if config.l2_norm:
+                        model_activity = l2_normalize(model_activity)
+                    val_frame_activity += [model_activity]
+            if config.dist_fun == 'l2':
+                val_pos = l2_dist(
+                    val_frame_activity[0], val_frame_activity[1], axis=1)
+                val_neg = l2_dist(
+                    val_frame_activity[0], val_frame_activity[2], axis=1)
+            elif config.dist_fun == 'pearson':
+                val_pos = pearson_dist(
+                    val_frame_activity[0], val_frame_activity[1], axis=1)
+                val_neg = pearson_dist(
+                    val_frame_activity[0], val_frame_activity[2], axis=1)
+            if config.per_batch:
+                val_loss = tf.maximum(
+                    tf.reduce_mean(val_pos - val_neg) + margin, 0.)
+            else:
+                val_loss = tf.reduce_mean(
+                    tf.maximum(val_pos - val_neg + margin, 0.))
             tf.summary.scalar('Validation_triplet_loss', val_loss)
 
-            # Calculate validation accuracy
+        # Calculate validation accuracy
         val_accuracy = tf.reduce_mean(
             tf.cast(
                 tf.equal(
-                    tf.nn.relu(tf.sign(val_neg - val_pos)), # 1 if pos < neg
+                    tf.nn.relu(tf.sign(val_neg - val_pos)),
                     tf.cast(tf.ones_like(val_labels), tf.float32)),
                 tf.float32))
         tf.summary.scalar('val_accuracy', val_accuracy)
