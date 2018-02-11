@@ -176,14 +176,14 @@ def image_batcher(
         config,
         training_max,
         training_min,
-        per_channel=False):
+        per_timepoint=False):
     """Placeholder image/label batch loader."""
     for b in range(num_batches):
         next_image_batch = images[start:start + config.validation_batch]
         image_stack, output_files = [], []
         label_stack = labels[start:start + config.validation_batch]
         for f in next_image_batch:
-            if per_channel:
+            if per_timepoint:
                 for channel in range(config.channel):
                     # 1. Load image patch
                     patch = produce_patch(
@@ -258,7 +258,8 @@ def visualize_model(
         output_folder,
         smooth_iterations=50,
         untargeted=False,
-        viz='sum_abs'):
+        viz='none',
+        per_timepoint=True):
     """Train an SVM for your dataset on GEDI-model encodings."""
     config = GEDIconfig()
     if live_ims is None:
@@ -371,7 +372,8 @@ def visualize_model(
                     labels=combined_labels,
                     config=config,
                     training_max=training_max,
-                    training_min=training_min),
+                    training_min=training_min,
+                    per_timepoint=per_timepoint),
                 total=num_batches):
             feed_dict = {
                 images: image_batch,
@@ -501,6 +503,11 @@ if __name__ == '__main__':
         dest="untargeted",
         action='store_true',
         help='Visualize overall saliency instead of features related to the most likely category.')
+    parser.add_argument(
+        "--per_timepoint",
+        dest="per_timepoint",
+        action='store_false',
+        help='Produce visualizations of every timepoint in a tiff image.')
     parser.add_argument(
         "--smooth_iterations",
         type=int,
