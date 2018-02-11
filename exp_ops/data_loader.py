@@ -6,7 +6,7 @@ from glob import glob
 
 def get_image_size(config):
     im_size = misc.imread(
-      glob(config.train_directory + '*' + config.im_ext)[0]).shape
+        glob(config.train_directory + '*' + config.im_ext)[0]).shape
     if len(im_size) == 2:
         im_size = np.hstack((im_size, 3))
     return im_size

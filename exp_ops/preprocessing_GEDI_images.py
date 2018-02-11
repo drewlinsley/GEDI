@@ -23,10 +23,10 @@ def produce_patches_parallel(config, im_lists, number_of_threads=8):
                 divide_panel=config.divide_panel)
             print('Extracting patches to %s' % od)
             pool.map(engine, il, chunksize=128)
-    except:
-        print '-'*60
+    except IOError:
+        print '-' * 60
         traceback.print_exc(file=sys.stdout)
-        print '-'*60
+        print '-' * 60
     finally:
         pool.close()
         pool.join()
@@ -77,7 +77,8 @@ def produce_patch(
         output_dir=None,
         out_im_ext=None,
         return_raw=False,
-        matching=False):
+        matching=False,
+        debug=False):
     """For multithread"""
     with TiffFile(p) as tif:
         im = tif.asarray()
@@ -89,9 +90,10 @@ def produce_patch(
             im = im[channel]
         else:
             im = im.squeeze()
-            print(
-                'Warning: Image has no slices. '
-                'Image size is %s.' % str(im.shape))
+            if debug:
+                print(
+                    'Warning: Image has no slices. '
+                    'Image size is %s.' % str(im.shape))
     patch = get_patch(im, panel).astype(np.float32)
     if max_value is None:
         max_value = np.max(patch)

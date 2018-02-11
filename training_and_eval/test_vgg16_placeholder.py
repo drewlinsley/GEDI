@@ -115,6 +115,14 @@ def test_vgg16(image_dir, model_file, output_csv='prediction_file'):
     [make_dir(d) for d in dir_list]
 
     # Prepare data on CPU
+    if config.model_image_size[:-1] < 3:
+        print '*' * 60
+        print (
+            'Warning: model is expecting a H/W/1 image. '
+            'Do you mean to set the last dimension of '
+            'config.model_image_size to 3?')
+        print '*' * 60
+
     images = tf.placeholder(
         tf.float32,
         shape=[None] + config.model_image_size,

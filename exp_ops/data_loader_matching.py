@@ -173,7 +173,6 @@ def read_and_decode(
                 im, model_input_shape[0], model_input_shape[1])
             split_image[idx] = im
 
-
     # if max_value is None:
     #     max_value = tf.reduce_max(
     #         image,

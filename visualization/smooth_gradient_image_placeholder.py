@@ -10,7 +10,81 @@ from exp_ops.preprocessing_GEDI_images import produce_patch
 from gedi_config import GEDIconfig
 from models import baseline_vgg16 as vgg16
 from matplotlib import pyplot as plt
+from matplotlib import gridspec
+from matplotlib.colors import Normalize
 from tqdm import tqdm
+from skimage import exposure
+
+
+def normalize(ims, thresh=0.05, max_val=None):
+    norm_im = np.zeros_like(ims)
+    for idx, im in enumerate(ims):
+        min_x = np.min(im)
+        if max_val is None:
+            max_x = np.max(im)
+        else:
+            max_x = max_val
+        norm_im[idx] = (im - min_x) / (max_x - min_x)
+        if thresh:
+            norm_im[idx] = np.maximum(norm_im[idx], thresh)
+            norm_im[idx][norm_im[idx] == thresh] = 0
+    return norm_im
+
+
+def alpha_mosaic(
+        ims,
+        maps,
+        output,
+        title='Mosaic',
+        rc=None,
+        cc=None,
+        top_n=None,
+        cmap='gray',
+        vmax=None,
+        pad=True,
+        colorbar=False):
+    if rc is None:
+        rc = np.ceil(np.sqrt(len(maps))).astype(int)
+        cc = np.ceil(np.sqrt(len(maps))).astype(int)
+    if top_n is not None:
+        l2 = np.asarray([np.sum(x ** 2) for x in maps])
+        l2_order = np.argsort(l2)[::-1]
+        maps = maps[l2_order]
+        maps = maps[:top_n]
+    f = plt.figure(figsize=(10, 10))
+    plt.suptitle(title, fontsize=20)
+    gs1 = gridspec.GridSpec(rc, cc)
+    gs1.update(wspace=0.2, hspace=0)  # set the spacing between axes.
+    for idx, (tpn_ap_grads, im) in enumerate(zip(maps, ims)):
+        ax1 = plt.subplot(gs1[idx])
+        plt.axis('off')
+        ax1.set_xticklabels([])
+        ax1.set_yticklabels([])
+        ax1.set_aspect('equal')
+
+        if pad:
+            trim_h, trim_w = 1, 5
+            tpn_ap_grads = np.flipud(tpn_ap_grads)
+            tpn_ap_grads = tpn_ap_grads[:-trim_h, trim_w:]
+            im = im[:-trim_h, :-trim_w]
+
+        alphas = Normalize(0, 0.4, clip=True)(np.abs(tpn_ap_grads))
+        alphas = np.clip(alphas, .05, .9)
+        vmax = np.percentile(tpn_ap_grads, 99.9)
+        vmin = np.percentile(tpn_ap_grads, 0.1)
+        tpn_ap_grads = Normalize(vmin, vmax)(tpn_ap_grads)
+        tpn_ap_grads = cmap(tpn_ap_grads)
+        tpn_ap_grads[..., -1] = alphas
+        ax1.imshow(
+            exposure.equalize_adapthist(im, clip_limit=0.008), cmap='Greens')
+        xmin, ymin = 0, 0
+        xmax, ymax = im.shape[:2]
+        cf = ax1.imshow(tpn_ap_grads, extent=(xmin, xmax, ymin, ymax))
+        if colorbar and idx == len(maps) - 1:
+            plt.colorbar(cf)
+    plt.savefig(output)
+    plt.show()
+    plt.close(f)
 
 
 def flatten_list(l):
@@ -68,6 +142,8 @@ def visualization_function(images, viz):
         return np.sum(np.abs(images), axis=-1)
     elif viz == 'sum_p':
         return np.sum(np.pow(images, 2), axis=-1)
+    elif viz == 'none':
+        return images
     else:
         raise RuntimeError('Visualization method not implemented.')
 
@@ -99,39 +175,67 @@ def image_batcher(
         labels,
         config,
         training_max,
-        training_min):
+        training_min,
+        per_channel=False):
     """Placeholder image/label batch loader."""
     for b in range(num_batches):
         next_image_batch = images[start:start + config.validation_batch]
-        image_stack = []
+        image_stack, output_files = [], []
         label_stack = labels[start:start + config.validation_batch]
         for f in next_image_batch:
-            # 1. Load image patch
-            patch = produce_patch(
-                f,
-                config.channel,
-                config.panel,
-                divide_panel=config.divide_panel,
-                max_value=config.max_gedi,
-                min_value=config.min_gedi).astype(np.float32)
-            # 2. Repeat to 3 channel (RGB) image
-            patch = np.repeat(patch[:, :, None], 3, axis=-1)
-            # 3. Renormalize based on the training set intensities
-            patch = renormalize(
-                patch,
-                max_value=training_max,
-                min_value=training_min)
-            # 4. Crop the center
-            patch = crop_center(patch, config.model_image_size[:2])
-            # 5. Clip to [0, 1] just in case
-            patch[patch > 1.] = 1.
-            patch[patch < 0.] = 0.
-            # 6. Add to list
-            image_stack += [patch[None, :, :, :]]
+            if per_channel:
+                for channel in range(config.channel):
+                    # 1. Load image patch
+                    patch = produce_patch(
+                        f,
+                        channel,
+                        config.panel,
+                        divide_panel=config.divide_panel,
+                        max_value=config.max_gedi,
+                        min_value=config.min_gedi).astype(np.float32)
+                    # 2. Repeat to 3 channel (RGB) image
+                    patch = np.repeat(patch[:, :, None], 3, axis=-1)
+                    # 3. Renormalize based on the training set intensities
+                    patch = renormalize(
+                        patch,
+                        max_value=training_max,
+                        min_value=training_min)
+                    # 4. Crop the center
+                    patch = crop_center(patch, config.model_image_size[:2])
+                    # 5. Clip to [0, 1] just in case
+                    patch[patch > 1.] = 1.
+                    patch[patch < 0.] = 0.
+                    # 6. Add to list
+                    image_stack += [patch[None, :, :, :]]
+                    output_files += ['f_%s' % channel]
+            else:
+                # 1. Load image patch
+                patch = produce_patch(
+                    f,
+                    config.channel,
+                    config.panel,
+                    divide_panel=config.divide_panel,
+                    max_value=config.max_gedi,
+                    min_value=config.min_gedi).astype(np.float32)
+                # 2. Repeat to 3 channel (RGB) image
+                patch = np.repeat(patch[:, :, None], 3, axis=-1)
+                # 3. Renormalize based on the training set intensities
+                patch = renormalize(
+                    patch,
+                    max_value=training_max,
+                    min_value=training_min)
+                # 4. Crop the center
+                patch = crop_center(patch, config.model_image_size[:2])
+                # 5. Clip to [0, 1] just in case
+                patch[patch > 1.] = 1.
+                patch[patch < 0.] = 0.
+                # 6. Add to list
+                image_stack += [patch[None, :, :, :]]
+                output_files = np.copy(next_image_batch)
         # Add dimensions and concatenate
         start += config.validation_batch
         yield np.concatenate(
-            image_stack, axis=0), label_stack, next_image_batch
+            image_stack, axis=0), label_stack, output_files
 
 
 def randomization_test(y, yhat, iterations=10000):
@@ -232,7 +336,8 @@ def visualize_model(
 
     # Loop through each checkpoint then test the entire validation set
     ckpts = [model_file]
-    ckpt_yhat, ckpt_y, ckpt_scores, ckpt_file_array, ckpt_viz_images = [], [], [], [], []
+    ckpt_yhat, ckpt_y, ckpt_scores = [], [], []
+    ckpt_file_array, ckpt_viz_images = [], []
     print '-' * 60
     print 'Beginning evaluation'
     print '-' * 60
@@ -242,6 +347,7 @@ def visualize_model(
             combined_files)
         config.validation_batch = len(combined_files)
 
+    count = 0
     for idx, c in tqdm(enumerate(ckpts), desc='Running checkpoints'):
         dec_scores, yhat, y, file_array, viz_images = [], [], [], [], []
         # Initialize the graph
@@ -287,7 +393,7 @@ def visualize_model(
             it_grads /= smooth_iterations  # Mean across iterations
             it_grads = visualization_function(it_grads, viz)
 
-            # Save the grads
+            # Save each grad individually
             for grad_i, pred_i, file_i, label_i in zip(
                     it_grads, tyh, file_batch, label_batch):
                 out_pointer = os.path.join(
@@ -299,6 +405,37 @@ def visualize_model(
                 plt.title('Pred=%s, label=%s' % (pred_i, label_batch))
                 plt.savefig(out_pointer)
                 plt.close(f)
+
+            # Plot a moisaic of the grads
+            if viz == 'none':
+                pos_grads = normalize(np.maximum(it_grads, 0))
+                neg_grads = normalize(np.minimum(it_grads, 0))
+                alpha_mosaic(
+                    image_batch,
+                    pos_grads,
+                    'pos_batch_%s.pdf' % count,
+                    title='Positive gradient overlays.',
+                    rc=1,
+                    cc=len(image_batch),
+                    cmap=plt.cm.Reds)
+                alpha_mosaic(
+                    image_batch,
+                    neg_grads,
+                    'neg_batch_%s.pdf' % count,
+                    title='Negative gradient overlays.',
+                    rc=1,
+                    cc=len(image_batch),
+                    cmap=plt.cm.Reds)
+            else:
+                alpha_mosaic(
+                    image_batch,
+                    it_grads,
+                    'batch_%s.pdf' % count,
+                    title='Gradient overlays.',
+                    rc=1,
+                    cc=len(image_batch),
+                    cmap=plt.cm.Reds)
+            count += 1
 
             # Store the results
             dec_scores += [sc]

@@ -6,36 +6,10 @@ import numpy as np
 from datetime import datetime
 from argparse import ArgumentParser
 from exp_ops.data_loader_matching import inputs
-from exp_ops.tf_fun import make_dir, fine_tune_prepare_layers
+from exp_ops import tf_fun
 from gedi_config import GEDIconfig
 # from models import reduced_matching_gedi_big as matching_gedi
 from models import matching_vgg16 as vgg16
-
-
-def l2_normalize(x, axis=0, eps=1e-12):
-    return tf.nn.l2_normalize(x, axis, eps)
-
-
-def l2_dist(x, y, axis=None):
-    """L2 distance in tensorflow."""
-    if axis is None:
-        return tf.norm(x - y, ord='euclidean')
-    else:
-        return tf.norm(x - y, ord='euclidean', axis=axis)
-
-
-def pearson_dist(x, y, axis=None, eps=1e-8, tau=1e-4):
-    x_mean = tf.reduce_mean(x, keep_dims=True, axis=[-1]) + eps
-    y_mean = tf.reduce_mean(y, keep_dims=True, axis=[-1]) + eps
-    x_flat_normed = x - x_mean
-    y_flat_normed = y - y_mean
-    count = int(y.get_shape()[-1])
-    cov = tf.div(
-        tf.reduce_sum(tf.multiply(x_flat_normed, y_flat_normed), -1), count)
-    x_std = tf.sqrt(tf.div(tf.reduce_sum(tf.square(x - x_mean), -1), count))
-    y_std = tf.sqrt(tf.div(tf.reduce_sum(tf.square(y - y_mean), -1), count))
-    corr = cov/(tf.multiply(x_std, y_std) + tau)
-    return 1. - corr
 
 
 def train_model(
@@ -97,7 +71,7 @@ def train_model(
     dir_list = [
         config.train_checkpoint, config.train_summaries,
         config.results, out_dir]
-    [make_dir(d) for d in dir_list]
+    [tf_fun.make_dir(d) for d in dir_list]
     # im_shape = get_image_size(config)
     im_shape = config.gedi_image_size
 
@@ -168,15 +142,17 @@ def train_model(
                     output_shape=config.output_shape,
                     include_GEDI=config.include_GEDI)
                 if config.l2_norm:
-                    model_activity = l2_normalize(model_activity)
+                    model_activity = tf_fun.l2_normalize(model_activity)
                 frame_activity += [model_activity]
 
         if config.dist_fun == 'l2':
-            pos = l2_dist(frame_activity[0], frame_activity[1], axis=1)
-            neg = l2_dist(frame_activity[0], frame_activity[2], axis=1)
+            pos = tf_fun.l2_dist(frame_activity[0], frame_activity[1], axis=1)
+            neg = tf_fun.l2_dist(frame_activity[0], frame_activity[2], axis=1)
         elif config.dist_fun == 'pearson':
-            pos = pearson_dist(frame_activity[0], frame_activity[1], axis=1)
-            neg = pearson_dist(frame_activity[0], frame_activity[2], axis=1)
+            pos = tf_fun.pearson_dist(
+                frame_activity[0], frame_activity[1], axis=1)
+            neg = tf_fun.pearson_dist(
+                frame_activity[0], frame_activity[2], axis=1)
         if config.per_batch:
             loss = tf.maximum(tf.reduce_mean(pos - neg) + margin, 0.)
         else:
@@ -185,7 +161,7 @@ def train_model(
 
         # Weight decay
         if config.wd_layers is not None:
-            _, l2_wd_layers = fine_tune_prepare_layers(
+            _, l2_wd_layers = tf_fun.fine_tune_prepare_layers(
                 tf.trainable_variables(), config.wd_layers)
             l2_wd_layers = [
                 x for x in l2_wd_layers if 'biases' not in x.name]
@@ -216,7 +192,7 @@ def train_model(
                     output_shape=config.output_shape,
                     include_GEDI=config.include_GEDI)
                 if config.l2_norm:
-                    model_activity = l2_normalize(model_activity)
+                    model_activity = tf_fun.l2_normalize(model_activity)
                 val_frame_activity += [model_activity]
 
                 # Build matching model for other frames
@@ -226,17 +202,17 @@ def train_model(
                         output_shape=config.output_shape,
                         include_GEDI=config.include_GEDI)
                     if config.l2_norm:
-                        model_activity = l2_normalize(model_activity)
+                        model_activity = tf_fun.l2_normalize(model_activity)
                     val_frame_activity += [model_activity]
             if config.dist_fun == 'l2':
-                val_pos = l2_dist(
+                val_pos = tf_fun.l2_dist(
                     val_frame_activity[0], val_frame_activity[1], axis=1)
-                val_neg = l2_dist(
+                val_neg = tf_fun.l2_dist(
                     val_frame_activity[0], val_frame_activity[2], axis=1)
             elif config.dist_fun == 'pearson':
-                val_pos = pearson_dist(
+                val_pos = tf_fun.pearson_dist(
                     val_frame_activity[0], val_frame_activity[1], axis=1)
-                val_neg = pearson_dist(
+                val_neg = tf_fun.pearson_dist(
                     val_frame_activity[0], val_frame_activity[2], axis=1)
             if config.per_batch:
                 val_loss = tf.maximum(

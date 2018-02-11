@@ -78,13 +78,51 @@ def replace_nans(x, replace=0.):
         x)
 
 
-def find_ckpts(config,dirs=None):
+def find_ckpts(config, dirs=None):
     if dirs is None:
-        dirs = sorted(glob(
-        config.train_checkpoint + config.which_dataset + '*'), reverse=True)[0]  # only the newest model run
+        dirs = sorted(
+            glob(
+                config.train_checkpoint + config.which_dataset + '*'), reverse=True)[0]  # only the newest model run
     ckpts = sorted(glob(dirs + '/*.ckpt*'))
     ckpts = [x for x in glob(os.path.join(dirs, '*.ckpt*')) if 'meta' in x]
     ckpt_num = np.argsort([int(x.split('-')[-1].split('.')[0]) for x in ckpts])
     ckpt_metas = np.asarray(ckpts)[ckpt_num]
     ckpt_names = [x.split('.meta')[0] for x in ckpt_metas]
     return np.asarray(ckpt_names), ckpt_metas
+
+
+def l2_normalize(x, axis=0, eps=1e-12):
+    """L2 normalize x."""
+    return tf.nn.l2_normalize(x, axis, eps)
+
+
+def l2_dist(x, y, axis=None):
+    """L2 distance in tensorflow."""
+    if axis is None:
+        return tf.norm(x - y, ord='euclidean')
+    else:
+        return tf.norm(x - y, ord='euclidean', axis=axis)
+
+
+def pearson_dist(x, y, axis=None, eps=1e-8, tau=1e-4):
+    """Pearson dissimilarity."""
+    x_mean = tf.reduce_mean(x, keep_dims=True, axis=[-1]) + eps
+    y_mean = tf.reduce_mean(y, keep_dims=True, axis=[-1]) + eps
+    x_flat_normed = x - x_mean
+    y_flat_normed = y - y_mean
+    count = int(y.get_shape()[-1])
+    cov = tf.div(
+        tf.reduce_sum(tf.multiply(x_flat_normed, y_flat_normed), -1), count)
+    x_std = tf.sqrt(tf.div(tf.reduce_sum(tf.square(x - x_mean), -1), count))
+    y_std = tf.sqrt(tf.div(tf.reduce_sum(tf.square(y - y_mean), -1), count))
+    corr = cov / (tf.multiply(x_std, y_std) + tau)
+    return 1. - corr
+
+
+def crop_center(img, crop_size):
+    """Center crop an image."""
+    x, y = img.shape[:2]
+    cx, cy = crop_size
+    startx = x // 2 - (cx // 2)
+    starty = y // 2 - (cy // 2)
+    return img[starty:starty + cy, startx:startx + cx]
