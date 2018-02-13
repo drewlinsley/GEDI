@@ -101,8 +101,8 @@ def test_placeholder(
     try:
         # Load the model's config
         config = np.load(model_meta).item()
-    except IOError:
-        'Could not load model config, falling back to default config.'
+    except:
+        print 'Could not load model config, falling back to default config.'
     try:
         # Load autopsy information
         autopsy_data = pd.read_csv(autopsy_csv)
