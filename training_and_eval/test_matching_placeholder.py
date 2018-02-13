@@ -101,6 +101,7 @@ def test_placeholder(
         config = np.load(model_meta).item()
     except:
         print 'Could not load model config, falling back to default config.'
+    config.model_image_size[-1] = 1
     try:
         # Load autopsy information
         autopsy_data = pd.read_csv(autopsy_csv)
