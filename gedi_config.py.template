@@ -180,7 +180,7 @@ class GEDIconfig(object):  # at some point use pjoin throughout
         self.validation_batch = 16  # Number of validation images to
         self.validation_steps = 500
         self.validation_iterations = 50
-        self.num_keep_checkpoints = 50
+        self.num_keep_checkpoints = 10
         # evaluate after every N iterations.
         # Normalize GEDIs in uint8 to 0-1 float. May be redundant.
         self.normalize = True  # Normalize each image to [0, 1] during
@@ -217,7 +217,7 @@ class GEDIconfig(object):  # at some point use pjoin throughout
             'left_right',
             'up_down',
             'random_crop',
-            'rotate',
+            # 'rotate',
             # 'random_brightness',
             # 'random_contrast'
         ]
