@@ -20,25 +20,34 @@ from models import matching_vgg16 as vgg16
 def process_image(
         filename,
         model_input_shape,
-        num_panels=1,
+        channel_number=0,
+        num_panels=3,
+        first_n_images=1,
         normalize=True):
     """Process images for the matching model with numpy."""
     image = io.imread(filename)
     im_shape = image.shape
-    image = image.reshape(im_shape[0], im_shape[0], num_panels)
+    if len(im_shape) == 3:
+        # Multi-timestep image
+        image = image[channel_number].reshape(
+            im_shape[1], im_shape[1], num_panels)
+    elif len(im_shape) == 2:
+        image = image.reshape(im_shape[1], im_shape[1], num_panels)
+    else:
+        raise RuntimeError('Cannot understand the dimensions of your image.')
 
     # Split the images
     split_image = np.split(image, num_panels, axis=-1)
 
     # Insert augmentation and preprocessing here
     ims, filenames = [], []
-    for idx, im in enumerate(split_image):
-        ims += [tf_fun.crop_center(im, model_input_shape)]
+    for idx in range(first_n_images):
+        ims += [tf_fun.crop_center(split_image[idx], model_input_shape[:2])]
         filenames += ['%s %s' % (filename, idx)]
 
-    ims = np.asarray(ims)
+    ims = np.asarray(ims).astype(np.float32)
     if normalize:
-        ims /= ims.max(0, keepdims=True).max(1, keepdims=True)
+        ims /= ims.max(1, keepdims=True).max(2, keepdims=True)
         ims = np.minimum(np.maximum(ims, 1), 0)
     return ims, np.asarray(filenames)
 
@@ -48,30 +57,38 @@ def image_batcher(
         num_batches,
         images,
         config,
+        first_n_images,
         n_images):
     for b in range(num_batches):
         next_image_batch = images[start:start + config.validation_batch]
         image_stack = []
+        image_filenames = []
         for f in next_image_batch:
             # 1. Load image patch
-            patch = process_image(
+            patches, filenames = process_image(
                 filename=f,
+                channel_number=config.channel,
                 model_input_shape=config.model_image_size,
                 num_panels=n_images,
-                normalize=config.normalize).astype(np.float32)
+                first_n_images=first_n_images,
+                normalize=config.normalize)
             # 2. Repeat to 3 channel (RGB) image
-            patch = np.repeat(patch[:, :, None], 3, axis=-1)
+            if patches.shape[0] > 1:
+                raise NotImplementedError('Unfinished multi-image processing.')
+            image_filenames += [filenames]
             # 3. Add to list
-            image_stack += [patch[None, :, :, :]]
+            image_stack += [patches]
         # Add dimensions and concatenate
         start += config.validation_batch
-        yield np.concatenate(image_stack, axis=0), next_image_batch
+        yield np.concatenate(image_stack, axis=0), np.asarray(image_filenames)
 
 
 def test_placeholder(
-        image_path=None,
-        model_file=None,
-        n_images=1,
+        image_path,
+        model_file,
+        model_meta,
+        n_images=3,
+        first_n_images=1,
         debug=True,
         margin=.1,
         autopsy_csv=None,
@@ -83,7 +100,7 @@ def test_placeholder(
 
     try:
         # Load the model's config
-        config = glob(os.path.join(model_file, '*.npy'))
+        config = np.load(model_meta).item()
     except IOError:
         'Could not load model config, falling back to default config.'
     try:
@@ -91,8 +108,18 @@ def test_placeholder(
         autopsy_data = pd.read_csv(autopsy_csv)
     except IOError:
         print 'Unable to load autopsy file.'
-    combined_files = np.asarray(
-        glob(os.path.join(image_path, '*%s' % config.raw_im_ext)))
+    if not hasattr(config, 'include_GEDI'):
+        config.include_GEDI = True
+        config.l2_norm = False
+        config.dist_fun = 'pearson'
+        config.per_batch = False
+        config.output_shape = 32
+        config.margin = 0.1
+    if os.path.isdir(image_path):
+        combined_files = np.asarray(
+            glob(os.path.join(image_path, '*%s' % config.raw_im_ext)))
+    else:
+        combined_files = image_path
     if len(combined_files) == 0:
         raise RuntimeError('Could not find any files. Check your image path.')
 
@@ -107,18 +134,14 @@ def test_placeholder(
     dir_list = [out_dir]
     [tf_fun.make_dir(d) for d in dir_list]
 
-    print '-' * 60
-    print('Training model:' + dt_dataset)
-    print '-' * 60
-
     # Prepare data on CPU
     with tf.device('/cpu:0'):
         images = []
-        for idx in range(n_images):
+        for idx in range(first_n_images):
             images += [tf.placeholder(
                 tf.float32,
                 shape=[None] + config.model_image_size,
-                name='images %s' % idx)]
+                name='images_%s' % idx)]
 
     # Prepare model on GPU
     with tf.device('/gpu:0'):
@@ -134,7 +157,7 @@ def test_placeholder(
             if config.l2_norm:
                 model_activity = [model_activity]
             frame_activity += [model_activity]
-        if n_images > 1:
+        if first_n_images > 1:
             with tf.variable_scope('match', reuse=tf.AUTO_REUSE):
                 # Build matching model for other frames
                 for idx in range(1, len(images)):
@@ -193,21 +216,24 @@ def test_placeholder(
                 num_batches=num_batches,
                 images=combined_files,
                 config=config,
+                first_n_images=first_n_images,
                 n_images=n_images),
             total=num_batches):
-        feed_dict = {
-            images: image_batch
-        }
-        activity = sess.run(
-            model_activity,
-            feed_dict=feed_dict)
-        score_array += [activity]
-        file_array = np.append(file_array, file_batch)
+        for im_head in images:
+            feed_dict = {
+                im_head: image_batch
+            }
+            activity = sess.run(
+                model_activity,
+                feed_dict=feed_dict)
+            score_array += [activity]
+        file_array += [file_batch]
     print 'Image processing %d took %.1f seconds' % (
         idx, time.time() - start_time)
     sess.close()
-    score_array = np.asarray(score_array)
-    file_array = np.asarray(file_array)
+    import ipdb;ipdb.set_trace()
+    score_array = np.concatenate(score_array)
+    file_array = np.concatenate(file_array)
 
     # Save everything
     np.savez(
@@ -230,13 +256,16 @@ def test_placeholder(
             pathologies += [it_path]
         pathologies = np.asarray(pathologies)[:len(score_array)]
 
+        mu = score_array.mean(0)
+        sd = score_array.std(0)
+        z_score_array = (score_array - mu) / (sd + 1e-12)
         if embedding_type == 'TSNE' or embedding_type == 'tsne':
             emb = manifold.TSNE(n_components=2, init='pca', random_state=0)
         elif embedding_type == 'PCA' or embedding_type == 'pca':
             emb = PCA(n_components=2, svd_solver='randomized', random_state=0)
         elif embedding_type == 'spectral':
             emb = manifold.SpectralEmbedding(n_components=2, random_state=0)
-        y = emb.fit_transform(score_array)
+        y = emb.fit_transform(z_score_array)
 
         # Ouput csv
         df = pd.DataFrame(
@@ -281,10 +310,16 @@ if __name__ == '__main__':
         default=None, help='Directory with tiff images.')
     parser.add_argument(
         '--model_file', type=str, dest='model_file',
-        default=None, help='Path to the model files.')
+        default=None, help='Path to the model checkpoint file.')
+    parser.add_argument(
+        '--model_meta', type=str, dest='model_meta',
+        default=None, help='Path to the model meta file.')
     parser.add_argument(
         '--n_images', type=int, dest='n_images',
-        default=1, help='Number of images in each exemplar.')
+        default=3, help='Number of images in each exemplar.')
+    parser.add_argument(
+        '--first_n_images', type=int, dest='n_images',
+        default=1, help='Analyze the first n images.')
     parser.add_argument(
         '--autopsy_csv',
         type=str,

@@ -120,6 +120,7 @@ def train_model(
     config.per_batch = False
     config.include_GEDI = False
     config.output_shape = 32
+    config.margin = margin
     with tf.device('/gpu:0'):
         with tf.variable_scope('match'):
             # Build matching model for frame 0
