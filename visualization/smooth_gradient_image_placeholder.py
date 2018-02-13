@@ -522,7 +522,7 @@ if __name__ == '__main__':
         type=int,
         dest="num_channels",
         default=3,
-        help='Number of iterations of smoothing for visualizations.')
+        help='Number of channels to visualize.')
     parser.add_argument(
         "--visualization",
         type=str,
