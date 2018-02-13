@@ -110,7 +110,7 @@ def test_placeholder(
         print 'Unable to load autopsy file.'
     if not hasattr(config, 'include_GEDI'):
         config.include_GEDI = True
-        config.l2_norm = False
+        config.l2_norm = True
         config.dist_fun = 'pearson'
         config.per_batch = False
         config.output_shape = 32
@@ -231,9 +231,9 @@ def test_placeholder(
     print 'Image processing %d took %.1f seconds' % (
         idx, time.time() - start_time)
     sess.close()
-    import ipdb;ipdb.set_trace()
-    score_array = np.concatenate(score_array)
-    file_array = np.concatenate(file_array)
+    score_array = np.concatenate(score_array, axis=0)
+    score_array = score_array.reshape(-1, score_array.shape[-1])
+    file_array = np.concatenate(file_array, axis=0)
 
     # Save everything
     np.savez(
@@ -241,7 +241,7 @@ def test_placeholder(
         score_array=score_array,
         file_array=file_array)
 
-    if n_images == 1:
+    if first_n_images == 1:
         # Derive pathologies from file names
         pathologies = []
         for f in combined_files:
