@@ -286,16 +286,10 @@ if __name__ == '__main__':
         '--n_images', type=int, dest='n_images',
         default=1, help='Number of images in each exemplar.')
     parser.add_argument(
-        '--autopsy_path',
-        type=str,
-        dest='autopsy_path',
-        default='timecourse_processing',
-        help='Directory containing your processed autopsy file.')
-    parser.add_argument(
         '--autopsy_csv',
         type=str,
         dest='autopsy_csv',
         default='processed_autopsy_info.csv',
-        help='CSV file with your autopsy info.')
+        help='Full path to the CSV file with your autopsy info.')
     args = parser.parse_args()
     test_placeholder(**vars(args))
