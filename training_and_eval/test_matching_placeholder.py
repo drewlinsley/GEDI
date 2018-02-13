@@ -29,15 +29,10 @@ def process_image(
     im_shape = image.shape
     if len(im_shape) == 3:
         # Multi-timestep image
-        image = image[channel_number].reshape(
-            im_shape[1], im_shape[1], num_panels)
-    elif len(im_shape) == 2:
-        image = image.reshape(im_shape[1], im_shape[1], num_panels)
+        image = image[channel_number]
     else:
         raise RuntimeError('Cannot understand the dimensions of your image.')
-
-    # Split the images
-    split_image = np.split(image, num_panels, axis=-1)
+    split_image = np.split(image, 3, axis=-1)
 
     # Insert augmentation and preprocessing here
     ims, filenames = [], []
@@ -73,10 +68,13 @@ def image_batcher(
                 first_n_images=first_n_images,
                 normalize=config.normalize)
             # 2. Repeat to 3 channel (RGB) image
-            if patches.shape[0] > 1:
+            pshape = patches.shape
+            if pshape[0] > 1:
                 raise NotImplementedError('Unfinished multi-image processing.')
             image_filenames += [filenames]
             # 3. Add to list
+            if len(pshape) < 4:
+                patches = np.expand_dims(patches, axis=-1)
             image_stack += [patches]
         # Add dimensions and concatenate
         start += config.validation_batch
@@ -119,7 +117,7 @@ def test_placeholder(
         combined_files = np.asarray(
             glob(os.path.join(image_path, '*%s' % config.raw_im_ext)))
     else:
-        combined_files = image_path
+        combined_files = [image_path]
     if len(combined_files) == 0:
         raise RuntimeError('Could not find any files. Check your image path.')
 
