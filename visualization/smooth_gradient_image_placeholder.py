@@ -176,6 +176,7 @@ def image_batcher(
         config,
         training_max,
         training_min,
+        num_channels=3,
         per_timepoint=False):
     """Placeholder image/label batch loader."""
     for b in range(num_batches):
@@ -184,7 +185,7 @@ def image_batcher(
         label_stack = labels[start:start + config.validation_batch]
         for f in next_image_batch:
             if per_timepoint:
-                for channel in range(config.channel):
+                for channel in range(num_channels):
                     # 1. Load image patch
                     patch = produce_patch(
                         f,
@@ -256,6 +257,7 @@ def visualize_model(
         dead_ims,
         model_file,
         output_folder,
+        num_channels,
         smooth_iterations=50,
         untargeted=False,
         viz='none',
@@ -373,6 +375,7 @@ def visualize_model(
                     config=config,
                     training_max=training_max,
                     training_min=training_min,
+                    num_channels=num_channels,
                     per_timepoint=per_timepoint),
                 total=num_batches):
             feed_dict = {
@@ -513,6 +516,12 @@ if __name__ == '__main__':
         type=int,
         dest="smooth_iterations",
         default=10,
+        help='Number of iterations of smoothing for visualizations.')
+    parser.add_argument(
+        "--num_channels",
+        type=int,
+        dest="num_channels",
+        default=3,
         help='Number of iterations of smoothing for visualizations.')
     parser.add_argument(
         "--visualization",
