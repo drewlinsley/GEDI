@@ -74,7 +74,6 @@ def test_placeholder(
         n_images=1,
         debug=True,
         margin=.1,
-        autopsy_path=None,
         autopsy_csv=None,
         embedding_type='PCA'):
     config = GEDIconfig()
@@ -89,10 +88,7 @@ def test_placeholder(
         'Could not load model config, falling back to default config.'
     try:
         # Load autopsy information
-        autopsy_data = pd.read_csv(
-            os.path.join(
-                autopsy_path,
-                autopsy_csv))
+        autopsy_data = pd.read_csv(autopsy_csv)
     except IOError:
         print 'Unable to load autopsy file.'
     combined_files = np.asarray(
@@ -287,8 +283,8 @@ if __name__ == '__main__':
         '--model_file', type=str, dest='model_file',
         default=None, help='Path to the model files.')
     parser.add_argument(
-        '--n_images', type=str, dest='n_images',
-        default=None, help='Number of images in each exemplar.')
+        '--n_images', type=int, dest='n_images',
+        default=1, help='Number of images in each exemplar.')
     parser.add_argument(
         '--autopsy_path',
         type=str,
