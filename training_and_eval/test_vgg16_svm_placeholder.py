@@ -88,22 +88,26 @@ def randomization_test(y, yhat, iterations=10000):
 def test_vgg16(
         model_file,
         trained_svm,
-        live_ims,
+        ims,
         dead_ims=None,
         output_csv='prediction_file',
         C=1e-3,
         k_folds=10):
     """Test an SVM you've trained on a new dataset."""
     config = GEDIconfig()
-    if live_ims is None:
+    if ims is None:
         raise RuntimeError(
-            'You need to supply a directory path to the live images.')
+            'You need to supply a directory path to the images.')
     if dead_ims is None:
-        print 'Assuming all of your images are in the live_ims folder' + \
+        print 'Assuming all of your images are in the ims folder' + \
             '-- will not derive labels to calculate accuracy.'
-    if not os.path.exists(trained_svm):
-        raise RuntimeError(
-            'Cannot find the trained svm model. Check the path you passed.')
+    # if not os.path.exists(trained_svm):
+    #     raise RuntimeError(
+    #         'Cannot find the trained svm model. Check the path you passed.')
+    try:
+        clf = cPickle.load(open(trained_svm, 'rb'))
+    except:
+        raise RuntimeError('Cannot find SVM file: %s' % trained_svm)
 
     if live_ims is not None and dead_ims is not None:
         live_files = glob(os.path.join(live_ims, '*%s' % config.raw_im_ext))
@@ -234,7 +238,6 @@ def test_vgg16(
         combined_files=ckpt_file_array)
 
     # Run SVM
-    clf = cPickle.load(open(trained_svm, 'rb'))
     predictions = clf.predict(np.concatenate(dec_scores))
     if combined_labels is not None:
         mean_acc = np.mean(predictions == y)
@@ -278,9 +281,9 @@ def test_vgg16(
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument(
-        "--live_ims",
+        "--ims",
         type=str,
-        dest="live_ims",
+        dest="ims",
         default='/Users/drewlinsley/Documents/GEDI_images/human_bs',
         help="Directory containing your .tiff images.")
     parser.add_argument(
@@ -304,7 +307,7 @@ if __name__ == '__main__':
     parser.add_argument(
         "--trained_svm",
         type=str,
-        dest="svm_model",
+        dest="trained_svm",
         default='trained_svm',
         help="Directory pointer to your trained svm model.")
     parser.add_argument(
