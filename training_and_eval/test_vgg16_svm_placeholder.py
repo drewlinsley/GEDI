@@ -109,15 +109,15 @@ def test_vgg16(
     except:
         raise RuntimeError('Cannot find SVM file: %s' % trained_svm)
 
-    if live_ims is not None and dead_ims is not None:
-        live_files = glob(os.path.join(live_ims, '*%s' % config.raw_im_ext))
+    if dead_ims is not None:
+        live_files = glob(os.path.join(ims, '*%s' % config.raw_im_ext))
         dead_files = glob(os.path.join(dead_ims, '*%s' % config.raw_im_ext))
         combined_labels = np.concatenate((
             np.zeros(len(live_files)),
             np.ones(len(dead_files))))
         combined_files = np.concatenate((live_files, dead_files))
     else:
-        live_files = glob(os.path.join(live_ims, '*%s' % config.raw_im_ext))
+        live_files = glob(os.path.join(ims, '*%s' % config.raw_im_ext))
         combined_labels = None
         combined_files = np.asarray(live_files)
     if len(combined_files) == 0:
