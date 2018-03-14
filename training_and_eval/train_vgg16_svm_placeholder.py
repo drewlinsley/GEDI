@@ -231,6 +231,7 @@ def test_vgg16(
         clf, np.concatenate(dec_scores), y, cv=k_folds)
     cv_performance = metrics.accuracy_score(predictions, y)
     p_value = randomization_test(y=y, yhat=predictions)
+    clf.fit(np.concatenate(dec_scores), y)
     print '%s-fold SVM performance: accuracy = %s%% , p = %.5f' % (
         k_folds,
         np.mean(cv_performance * 100),
