@@ -30,20 +30,32 @@ def process_image(
     if len(im_shape) == 3:
         # Multi-timestep image
         image = image[channel_number]
+    elif len(im_shape) == 2:
+        pass
     else:
         raise RuntimeError('Cannot understand the dimensions of your image.')
-    split_image = np.split(image, 3, axis=-1)
+    if 3 * im_shape[0] == im_shape[1]:
+        split_image = np.split(image, 3, axis=-1)
 
-    # Insert augmentation and preprocessing here
-    ims, filenames = [], []
-    for idx in range(first_n_images):
-        ims += [tf_fun.crop_center(split_image[idx], model_input_shape[:2])]
-        filenames += ['%s %s' % (filename, idx)]
-
-    ims = np.asarray(ims).astype(np.float32)
-    if normalize:
-        ims /= ims.max(1, keepdims=True).max(2, keepdims=True)
-        ims = np.minimum(np.maximum(ims, 1), 0)
+        # Insert augmentation and preprocessing here
+        ims, filenames = [], []
+        for idx in range(first_n_images):
+            ims += [tf_fun.crop_center(
+                split_image[idx], model_input_shape[:2])]
+            filenames += ['%s %s' % (filename, idx)]
+        ims = np.asarray(ims).astype(np.float32)
+        np.asarray(filenames)
+        if normalize:
+            ims /= ims.max(1, keepdims=True).max(2, keepdims=True)
+            ims = np.minimum(np.maximum(ims, 1), 0)
+    else:
+        ims = np.asarray(image).astype(np.float32)
+        ims = tf_fun.crop_center(
+            ims, model_input_shape[:2])
+        filenames = np.asarray(filename)
+        if normalize:
+            ims /= ims.max()
+            ims = np.minimum(np.maximum(ims, 1), 0)
     return ims, np.asarray(filenames)
 
 
@@ -69,8 +81,10 @@ def image_batcher(
                 normalize=config.normalize)
             # 2. Repeat to 3 channel (RGB) image
             pshape = patches.shape
-            if pshape[0] > 1:
-                raise NotImplementedError('Unfinished multi-image processing.')
+            # import ipdb;ipdb.set_trace()
+            # if pshape[0] > 1:
+            #     raise NotImplementedError(
+            #    'Unfinished multi-image processing.')
             image_filenames += [filenames]
             # 3. Add to list
             if len(pshape) < 4:
@@ -78,7 +92,7 @@ def image_batcher(
             image_stack += [patches]
         # Add dimensions and concatenate
         start += config.validation_batch
-        yield np.concatenate(image_stack, axis=0), np.asarray(image_filenames)
+        yield np.asarray(image_stack), np.asarray(image_filenames)
 
 
 def test_placeholder(
@@ -244,15 +258,19 @@ def test_placeholder(
         # Derive pathologies from file names
         pathologies = []
         for f in combined_files:
-            sf = f.split('/')[-1].split('_')
-            sf = '_'.join(sf[1:4])
-            it_path = autopsy_data[
-                autopsy_data['plate_well_neuron'] == sf]['disease']
-            if not len(it_path):
-                it_path = 'Absent'
-            else:
-                it_path = it_path.as_matrix()[0]
-            pathologies += [it_path]
+            sf = f.split(os.path.sep)[-1].split('_')
+            line = sf[1]
+            # time_col = sf[2]
+            well = sf[4]
+            disease = autopsy_data[autopsy_data['line'] == line]['type']
+            if disease.shape[0] > 1:
+                import ipdb;ipdb.set_trace()
+                disease = disease[disease['wells']] = well
+            elif not len(disease):
+                disease = 'Not_found'
+            if not isinstance(disease, basestring):
+                disease = disease.as_matrix()[0]
+            pathologies += [disease]
         pathologies = np.asarray(pathologies)[:len(score_array)]
 
         mu = score_array.mean(0)
@@ -305,25 +323,39 @@ def test_placeholder(
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument(
-        '--image_path', type=str, dest='image_path',
-        default=None, help='Directory with tiff images.')
+        '--image_path',
+        type=str,
+        dest='image_path',
+        default='/home/drew/tissue/GEDI/combined',  # None,
+        help='Directory with tiff images.')
     parser.add_argument(
-        '--model_file', type=str, dest='model_file',
-        default=None, help='Path to the model checkpoint file.')
+        '--model_file', type=str,
+        dest='model_file',
+        default='/home/drew/tissue/GEDI/model_39500.ckpt-39500',  # None,
+        help='Path to the model checkpoint file.')
     parser.add_argument(
-        '--model_meta', type=str, dest='model_meta',
-        default=None, help='Path to the model meta file.')
+        '--model_meta',
+        type=str,
+        dest='model_meta',
+        default='/home/drew/tissue/GEDI/meta_info.npy',  # None,
+        help='Path to the model meta file.')
     parser.add_argument(
-        '--n_images', type=int, dest='n_images',
-        default=3, help='Number of images in each exemplar.')
+        '--n_images',
+        type=int,
+        dest='n_images',
+        default=3,
+        help='Number of images in each exemplar.')
     parser.add_argument(
-        '--first_n_images', type=int, dest='n_images',
-        default=1, help='Analyze the first n images.')
+        '--first_n_images',
+        type=int,
+        dest='n_images',
+        default=1,
+        help='Analyze the first n images.')
     parser.add_argument(
         '--autopsy_csv',
         type=str,
         dest='autopsy_csv',
-        default='processed_autopsy_info.csv',
+        default='timecourse_processing/autopsy_huntington_parkinson_3_14_18.csv',
         help='Full path to the CSV file with your autopsy info.')
     args = parser.parse_args()
     test_placeholder(**vars(args))
