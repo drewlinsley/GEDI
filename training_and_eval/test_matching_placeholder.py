@@ -3,6 +3,7 @@ import time
 import re
 import tensorflow as tf
 import numpy as np
+import seaborn as sns
 import pandas as pd
 from datetime import datetime
 from argparse import ArgumentParser
@@ -104,7 +105,7 @@ def test_placeholder(
         debug=True,
         margin=.1,
         autopsy_csv=None,
-        embedding_type='PCA'):
+        embedding_type='tsne'):
     config = GEDIconfig()
     assert margin is not None, 'Need a margin for the loss.'
     assert image_path is not None, 'Provide a path to an image directory.'
@@ -262,14 +263,14 @@ def test_placeholder(
             line = sf[1]
             # time_col = sf[2]
             well = sf[4]
-            disease = autopsy_data[autopsy_data['line'] == line]['type']
-            if disease.shape[0] > 1:
-                import ipdb;ipdb.set_trace()
-                disease = disease[disease['wells']] = well
-            elif not len(disease):
-                disease = 'Not_found'
-            if not isinstance(disease, basestring):
+            disease = autopsy_data[
+                np.logical_and(
+                    autopsy_data['line'] == line,
+                    autopsy_data['wells'] == well)]['type']
+            try:
                 disease = disease.as_matrix()[0]
+            except:
+                disease = 'Not_found'
             pathologies += [disease]
         pathologies = np.asarray(pathologies)[:len(score_array)]
 
@@ -296,15 +297,15 @@ def test_placeholder(
         print 'Saved csv to: %s' % out_name
 
         # Create plot
-        f, ax = plt.subplots()
-        unique_cats = np.unique(pathologies)
-        h = []
-        for idx, cat in enumerate(unique_cats):
-            h += [plt.scatter(
-                y[pathologies == cat, 0],
-                y[pathologies == cat, 1],
-                c=plt.cm.Spectral(idx * 1000))]
-        plt.legend(h, unique_cats)
+        sns.lmplot(
+            x='dim1',
+            y='dim2',
+            data=emb,
+            fit_reg=False,
+            hue='pathology',
+            legend=False)
+        plt.legend(loc='lower right')
+        sns.plt.show()
         plt.axis('tight')
         plt.show()
         plt.savefig('embedding.png')
