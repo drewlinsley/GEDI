@@ -105,7 +105,7 @@ def test_placeholder(
         debug=True,
         margin=.1,
         autopsy_csv=None,
-        embedding_type='tsne'):
+        embedding_type='pca'):
     config = GEDIconfig()
     assert margin is not None, 'Need a margin for the loss.'
     assert image_path is not None, 'Provide a path to an image directory.'
@@ -124,7 +124,7 @@ def test_placeholder(
         print 'Unable to load autopsy file.'
     if not hasattr(config, 'include_GEDI'):
         config.include_GEDI = True
-        config.l2_norm = True
+        config.l2_norm = False
         config.dist_fun = 'pearson'
         config.per_batch = False
         config.output_shape = 32
@@ -283,6 +283,7 @@ def test_placeholder(
             emb = PCA(n_components=2, svd_solver='randomized', random_state=0)
         elif embedding_type == 'spectral':
             emb = manifold.SpectralEmbedding(n_components=2, random_state=0)
+        # y = emb.fit_transform(z_score_array)
         y = emb.fit_transform(z_score_array)
 
         # Ouput csv
@@ -297,18 +298,17 @@ def test_placeholder(
         print 'Saved csv to: %s' % out_name
 
         # Create plot
+        plt_df = df.read_csv(out_name)
         sns.lmplot(
             x='dim1',
             y='dim2',
-            data=emb,
+            data=plt_df,
             fit_reg=False,
             hue='pathology',
             legend=False)
         plt.legend(loc='lower right')
-        sns.plt.show()
-        plt.axis('tight')
-        plt.show()
         plt.savefig('embedding.png')
+        sns.plt.show()
         plt.close(f)
     else:
         # Do a classification (sign of the score)
