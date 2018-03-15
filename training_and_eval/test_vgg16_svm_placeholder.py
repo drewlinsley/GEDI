@@ -105,7 +105,10 @@ def test_vgg16(
     #     raise RuntimeError(
     #         'Cannot find the trained svm model. Check the path you passed.')
     try:
-        clf = cPickle.load(open(trained_svm, 'rb'))
+        model_dict = cPickle.load(open(trained_svm, 'rb'))
+        clf = model_dict['clf']
+        mu = model_dict['mu']
+        sd = model_dict['sd']
     except:
         raise RuntimeError('Cannot find SVM file: %s' % trained_svm)
 
@@ -238,7 +241,9 @@ def test_vgg16(
         combined_files=ckpt_file_array)
 
     # Run SVM
-    predictions = clf.predict(np.concatenate(dec_scores))
+    all_scores = np.concatenate(dec_scores)
+    all_scores = (all_scores - mu) / sd
+    predictions = clf.predict(all_scores)
     if combined_labels is not None:
         mean_acc = np.mean(predictions == y)
         p_value = randomization_test(y=y, yhat=predictions)

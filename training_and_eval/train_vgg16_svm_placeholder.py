@@ -232,6 +232,8 @@ def test_vgg16(
     cv_performance = metrics.accuracy_score(predictions, y)
     p_value = randomization_test(y=y, yhat=predictions)
     clf.fit(np.concatenate(dec_scores), y)
+    mu = dec_scores.mean(0)
+    sd = dec_scores.std(0)
     print '%s-fold SVM performance: accuracy = %s%% , p = %.5f' % (
         k_folds,
         np.mean(cv_performance * 100),
@@ -245,6 +247,8 @@ def test_vgg16(
         cv_performance=cv_performance,
         p_value=p_value,
         k_folds=k_folds,
+        mu=mu,
+        sd=sd,
         C=C)
 
     # Also save a csv with item/guess pairs
@@ -268,7 +272,12 @@ def test_vgg16(
 
     # save the classifier
     with open('%s.pkl' % svm_model, 'wb') as fid:
-        cPickle.dump(clf, fid)
+        model_dict = {
+            'model': clf,
+            'mu': mu,
+            'sd': sd
+        }
+        cPickle.dump(model_dict, fid)
     print 'Saved svm model to: %s.pkl' % svm_model
 
 

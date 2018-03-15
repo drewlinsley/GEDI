@@ -26,7 +26,7 @@ def process_image(
         first_n_images=1,
         normalize=True):
     """Process images for the matching model with numpy."""
-    image = io.imread(filename)
+    image = io.imread(filename).astype(np.float32)
     im_shape = image.shape
     if len(im_shape) == 3:
         # Multi-timestep image
@@ -56,7 +56,7 @@ def process_image(
         filenames = np.asarray(filename)
         if normalize:
             ims /= ims.max()
-            ims = np.minimum(np.maximum(ims, 1), 0)
+            ims = np.maximum(np.minimum(ims, 1), 0)
     return ims, np.asarray(filenames)
 
 
@@ -283,7 +283,6 @@ def test_placeholder(
             emb = PCA(n_components=2, svd_solver='randomized', random_state=0)
         elif embedding_type == 'spectral':
             emb = manifold.SpectralEmbedding(n_components=2, random_state=0)
-        # y = emb.fit_transform(z_score_array)
         y = emb.fit_transform(z_score_array)
 
         # Ouput csv
@@ -298,7 +297,7 @@ def test_placeholder(
         print 'Saved csv to: %s' % out_name
 
         # Create plot
-        plt_df = df.read_csv(out_name)
+        plt_df = pd.read_csv(out_name)
         sns.lmplot(
             x='dim1',
             y='dim2',
@@ -308,6 +307,33 @@ def test_placeholder(
             legend=False)
         plt.legend(loc='lower right')
         plt.savefig('embedding.png')
+        sns.plt.show()
+        plt.close(f)
+
+        y = emb.fit_transform(score_array)
+
+        # Ouput csv
+        df = pd.DataFrame(
+            np.hstack((
+                y,
+                pathologies.reshape(-1, 1),
+                file_array.reshape(-1, 1))),
+            columns=['dim1', 'dim2', 'pathology', 'filename'])
+        out_name = os.path.join(out_dir, 'raw_embedding.csv')
+        df.to_csv(out_name)
+        print 'Saved csv to: %s' % out_name
+
+        # Create plot
+        plt_df = pd.read_csv(out_name)
+        sns.lmplot(
+            x='dim1',
+            y='dim2',
+            data=plt_df,
+            fit_reg=False,
+            hue='pathology',
+            legend=False)
+        plt.legend(loc='lower right')
+        plt.savefig('raw_embedding.png')
         sns.plt.show()
         plt.close(f)
     else:
@@ -332,13 +358,13 @@ if __name__ == '__main__':
     parser.add_argument(
         '--model_file', type=str,
         dest='model_file',
-        default='/home/drew/tissue/GEDI/model_39500.ckpt-39500',  # None,
+        default='/media/data/GEDI/drew_images/project_files/train_checkpoint/gfp_2018_03_15_16_48_21/model_6000.ckpt-6000',  # None,
         help='Path to the model checkpoint file.')
     parser.add_argument(
         '--model_meta',
         type=str,
         dest='model_meta',
-        default='/home/drew/tissue/GEDI/meta_info.npy',  # None,
+        default='/media/data/GEDI/drew_images/project_files/results/gfp_2018_03_15_16_48_21/meta_info.npy',  # None,
         help='Path to the model meta file.')
     parser.add_argument(
         '--n_images',
