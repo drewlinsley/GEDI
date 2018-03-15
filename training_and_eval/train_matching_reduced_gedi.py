@@ -16,7 +16,7 @@ def train_model(
         train_dir=None,
         validation_dir=None,
         debug=True,
-        margin=.1):
+        margin=.4):
     config = GEDIconfig()
     assert margin is not None, 'Need a margin for the loss.'
     if train_dir is None:  # Use globals
@@ -116,9 +116,10 @@ def train_model(
 
     # Prepare model on GPU
     config.l2_norm = False
+    config.norm_axis = 0
     config.dist_fun = 'pearson'
     config.per_batch = False
-    config.include_GEDI = True
+    config.include_GEDI = False
     config.output_shape = 32
     config.margin = margin
     with tf.device('/gpu:0'):
@@ -132,7 +133,8 @@ def train_model(
                 output_shape=config.output_shape,
                 include_GEDI=config.include_GEDI)
             if config.l2_norm:
-                model_activity = [model_activity]
+                model_activity = tf_fun.l2_normalize(
+                    model_activity, axis=config.norm_axis)
             frame_activity += [model_activity]
 
         with tf.variable_scope('match', reuse=tf.AUTO_REUSE):
@@ -143,7 +145,8 @@ def train_model(
                     output_shape=config.output_shape,
                     include_GEDI=config.include_GEDI)
                 if config.l2_norm:
-                    model_activity = tf_fun.l2_normalize(model_activity)
+                    model_activity = tf_fun.l2_normalize(
+                        model_activity, axis=config.norm_axis)
                 frame_activity += [model_activity]
 
         if config.dist_fun == 'l2':
@@ -154,6 +157,8 @@ def train_model(
                 frame_activity[0], frame_activity[1], axis=1)
             neg = tf_fun.pearson_dist(
                 frame_activity[0], frame_activity[2], axis=1)
+        else:
+            raise NotImplementedError(config.dist_fun)
         if config.per_batch:
             loss = tf.maximum(tf.reduce_mean(pos - neg) + margin, 0.)
         else:
@@ -193,7 +198,8 @@ def train_model(
                     output_shape=config.output_shape,
                     include_GEDI=config.include_GEDI)
                 if config.l2_norm:
-                    model_activity = tf_fun.l2_normalize(model_activity)
+                    model_activity = tf_fun.l2_normalize(
+                        model_activity, axis=config.norm_axis)
                 val_frame_activity += [model_activity]
 
                 # Build matching model for other frames
@@ -203,7 +209,8 @@ def train_model(
                         output_shape=config.output_shape,
                         include_GEDI=config.include_GEDI)
                     if config.l2_norm:
-                        model_activity = tf_fun.l2_normalize(model_activity)
+                        model_activity = tf_fun.l2_normalize(
+                            model_activity, axis=config.norm_axis)
                     val_frame_activity += [model_activity]
             if config.dist_fun == 'l2':
                 val_pos = tf_fun.l2_dist(
