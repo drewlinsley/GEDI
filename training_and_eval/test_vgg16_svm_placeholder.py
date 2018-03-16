@@ -107,8 +107,8 @@ def test_vgg16(
     try:
         model_dict = cPickle.load(open(trained_svm, 'rb'))
         clf = model_dict['clf']
-        mu = model_dict['mu']
-        sd = model_dict['sd']
+        # mu = model_dict['mu']
+        # sd = model_dict['sd']
     except:
         raise RuntimeError('Cannot find SVM file: %s' % trained_svm)
 
@@ -242,9 +242,9 @@ def test_vgg16(
 
     # Run SVM
     all_scores = np.concatenate(dec_scores)
-    all_scores = (all_scores - mu) / sd
+    # all_scores = (all_scores - mu) / sd
     predictions = clf.predict(all_scores)
-    if combined_labels is not None:
+    if dead_ims is not None:
         mean_acc = np.mean(predictions == y)
         p_value = randomization_test(y=y, yhat=predictions)
         print 'SVM performance: mean accuracy = %s%%, p = %.5f' % (
