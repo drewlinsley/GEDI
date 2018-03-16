@@ -123,6 +123,7 @@ def test_placeholder(
     except IOError:
         print 'Unable to load autopsy file.'
     if not hasattr(config, 'include_GEDI'):
+        raise RuntimeError('You need to pass the correct meta file.')
         config.include_GEDI = True
         config.l2_norm = False
         config.dist_fun = 'pearson'
