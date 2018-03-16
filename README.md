@@ -10,8 +10,8 @@
    * These are the weight files and meta data for a CNN trained to discriminate between live/dead cells (with GEDI ground-truth). 
 2b. https://mega.nz/#!29kmkJRD!Gak03yjvdFEw-w6k93wg0jxOyXryN7VEaCjh-2mKOvk
    * This is the GEDI model saved into a numpy.
-3. https://mega.nz/#F!waRRnQzB!oNA1gtYD8zYEyl361A4RLA
-   * This is the tracking model. Needs validation. Also contains two models: 39500 and 40000. Need to figure out which is best.
+3. https://mega.nz/#F!iY0zCaBQ!AzJHMIIEnYALG5xxnAWOFg
+   * This is the tracking model.
 4. https://mega.nz/#!yQNRkJqI!Gv9qSWoGqbdV1MjdJ9WrrQ3OMx3qogMhWPLTrVVuSME
    * This is a repackaging of the GEDI model into a .npy. Download this and add it to your config as `self.gedi_weight_path`.
 

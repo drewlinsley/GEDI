@@ -15,7 +15,6 @@ from tqdm import tqdm
 from sklearn import manifold
 from sklearn.decomposition import PCA
 from matplotlib import pyplot as plt
-from models import matching_vgg16 as vgg16
 
 
 def process_image(
@@ -105,7 +104,8 @@ def test_placeholder(
         debug=True,
         margin=.1,
         autopsy_csv=None,
-        embedding_type='pca'):
+        embedding_type='tsne',
+        autopsy_model='match'):
     config = GEDIconfig()
     assert margin is not None, 'Need a margin for the loss.'
     assert image_path is not None, 'Provide a path to an image directory.'
@@ -159,46 +159,59 @@ def test_placeholder(
 
     # Prepare model on GPU
     with tf.device('/gpu:0'):
-        with tf.variable_scope('match'):
-            # Build matching model for frame 0
-            model_0 = vgg16.model_struct(
+        if autopsy_model == 'match':
+            from models import matching_vgg16 as model_type
+            with tf.variable_scope('match'):
+                # Build matching model for frame 0
+                model_0 = model_type.model_struct(
+                    vgg16_npy_path=config.gedi_weight_path)  # ,
+                frame_activity = []
+                model_activity = model_0.build(
+                    images[0],
+                    output_shape=config.output_shape,
+                    include_GEDI=config.include_GEDI)
+                if config.l2_norm:
+                    model_activity = [model_activity]
+                frame_activity += [model_activity]
+            if first_n_images > 1:
+                with tf.variable_scope('match', reuse=tf.AUTO_REUSE):
+                    # Build matching model for other frames
+                    for idx in range(1, len(images)):
+                        model_activity = model_0.build(
+                            images[idx],
+                            output_shape=config.output_shape,
+                            include_GEDI=config.include_GEDI)
+                        if config.l2_norm:
+                            model_activity = tf_fun.l2_normalize(
+                                model_activity)
+                        frame_activity += [model_activity]
+                if config.dist_fun == 'l2':
+                    pos = tf_fun.l2_dist(
+                        frame_activity[0],
+                        frame_activity[1], axis=1)
+                    neg = tf_fun.l2_dist(
+                        frame_activity[0],
+                        frame_activity[2], axis=1)
+                elif config.dist_fun == 'pearson':
+                    pos = tf_fun.pearson_dist(
+                        frame_activity[0],
+                        frame_activity[1],
+                        axis=1)
+                    neg = tf_fun.pearson_dist(
+                        frame_activity[0],
+                        frame_activity[2],
+                        axis=1)
+                model_activity = pos - neg  # Store the difference in distances
+        elif autopsy_model == 'GEDI' or autopsy_model == 'gedi':
+            from models import baseline_vgg16 as model_type
+            model = model_type.model_struct(
                 vgg16_npy_path=config.gedi_weight_path)  # ,
-            frame_activity = []
-            model_activity = model_0.build(
+            model.build(
                 images[0],
-                output_shape=config.output_shape,
-                include_GEDI=config.include_GEDI)
-            if config.l2_norm:
-                model_activity = [model_activity]
-            frame_activity += [model_activity]
-        if first_n_images > 1:
-            with tf.variable_scope('match', reuse=tf.AUTO_REUSE):
-                # Build matching model for other frames
-                for idx in range(1, len(images)):
-                    model_activity = model_0.build(
-                        images[idx],
-                        output_shape=config.output_shape,
-                        include_GEDI=config.include_GEDI)
-                    if config.l2_norm:
-                        model_activity = tf_fun.l2_normalize(model_activity)
-                    frame_activity += [model_activity]
-            if config.dist_fun == 'l2':
-                pos = tf_fun.l2_dist(
-                    frame_activity[0],
-                    frame_activity[1], axis=1)
-                neg = tf_fun.l2_dist(
-                    frame_activity[0],
-                    frame_activity[2], axis=1)
-            elif config.dist_fun == 'pearson':
-                pos = tf_fun.pearson_dist(
-                    frame_activity[0],
-                    frame_activity[1],
-                    axis=1)
-                neg = tf_fun.pearson_dist(
-                    frame_activity[0],
-                    frame_activity[2],
-                    axis=1)
-            model_activity = pos - neg  # Store the difference in distances
+                output_shape=config.output_shape)
+            model_activity = model.fc7
+        else:
+            raise NotImplementedError(autopsy_model)
 
     if config.validation_batch > len(combined_files):
         print (
@@ -218,7 +231,8 @@ def test_placeholder(
             tf.local_variables_initializer()))
 
     # Set up exemplar threading
-    saver.restore(sess, model_file)
+    if autopsy_model == 'match':
+        saver.restore(sess, model_file)
     start_time = time.time()
     num_batches = np.floor(
         len(combined_files) / float(
@@ -356,9 +370,10 @@ if __name__ == '__main__':
         default='/home/drew/tissue/GEDI/combined',  # None,
         help='Directory with tiff images.')
     parser.add_argument(
-        '--model_file', type=str,
+        '--model_file',
+        type=str,
         dest='model_file',
-        default='/media/data/GEDI/drew_images/project_files/train_checkpoint/gfp_2018_03_15_16_48_21/model_6000.ckpt-6000',  # None,
+        default='/media/data/GEDI/drew_images/project_files/train_checkpoint/gfp_2018_03_15_16_48_21/model_37500.ckpt-37500',  # None,
         help='Path to the model checkpoint file.')
     parser.add_argument(
         '--model_meta',
@@ -384,5 +399,11 @@ if __name__ == '__main__':
         dest='autopsy_csv',
         default='timecourse_processing/autopsy_huntington_parkinson_3_14_18.csv',
         help='Full path to the CSV file with your autopsy info.')
+    parser.add_argument(
+        '--model_type',
+        type=str,
+        dest='autopsy_model',
+        default='match',
+        help='Type of autopsy model [match/gedi].')
     args = parser.parse_args()
     test_placeholder(**vars(args))

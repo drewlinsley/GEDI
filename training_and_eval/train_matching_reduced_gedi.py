@@ -119,7 +119,7 @@ def train_model(
     config.norm_axis = 0
     config.dist_fun = 'pearson'
     config.per_batch = False
-    config.include_GEDI = False
+    config.include_GEDI = True  # False
     config.output_shape = 32
     config.margin = margin
     with tf.device('/gpu:0'):
