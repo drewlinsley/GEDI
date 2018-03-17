@@ -99,6 +99,7 @@ def test_placeholder(
         image_path,
         model_file,
         model_meta,
+        out_dir,
         n_images=3,
         first_n_images=1,
         debug=True,
@@ -145,7 +146,7 @@ def test_placeholder(
     dt_dataset = config.which_dataset + '_' + dt_stamp + '/'
     config.train_checkpoint = os.path.join(
         config.train_checkpoint, dt_dataset)  # timestamp this run
-    out_dir = os.path.join(config.results, dt_dataset)
+    out_dir = os.path.join(out_dir, dt_dataset)
     dir_list = [out_dir]
     [tf_fun.make_dir(d) for d in dir_list]
 
@@ -406,5 +407,12 @@ if __name__ == '__main__':
         dest='autopsy_model',
         default='match',
         help='Type of autopsy model [match/gedi].')
+    parser.add_argument(
+        '--model_type',
+        type=str,
+        dest='out_dir',
+        default='autopsy_results',
+        help='Output directory.')
     args = parser.parse_args()
     test_placeholder(**vars(args))
+
