@@ -272,12 +272,12 @@ def test_vgg16(
 
     # save the classifier
     with open('%s.pkl' % svm_model, 'wb') as fid:
-        model_dict = {
-            'model': clf,
-            'mu': mu,
-            'sd': sd
-        }
-        cPickle.dump(model_dict, fid)
+        # model_dict = {
+        #     'model': clf,
+        #     'mu': mu,
+        #     'sd': sd
+        # }
+        cPickle.dump(clf, fid)
     print 'Saved svm model to: %s.pkl' % svm_model
 
 
