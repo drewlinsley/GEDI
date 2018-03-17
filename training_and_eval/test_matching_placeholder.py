@@ -408,7 +408,7 @@ if __name__ == '__main__':
         default='match',
         help='Type of autopsy model [match/gedi].')
     parser.add_argument(
-        '--model_type',
+        '--out_dir',
         type=str,
         dest='out_dir',
         default='autopsy_results',
