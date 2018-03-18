@@ -10,14 +10,16 @@ class model_struct:
     def __init__(
                 self, vgg16_npy_path=None, trainable=True,
                 fine_tune_layers=None):
-        if vgg16_npy_path is not None:
-            self.data_dict = np.load(vgg16_npy_path, encoding='latin1').item()
-            # pop the specified keys from the weights that will be loaded
-            if fine_tune_layers is not None:
-                for key in fine_tune_layers:
-                    del self.data_dict[key]
-        else:
-            self.data_dict = None
+        try:
+            if vgg16_npy_path is not None:
+                self.data_dict = np.load(vgg16_npy_path, encoding='latin1').item()
+                if fine_tune_layers is not None:
+                    for key in fine_tune_layers:
+                        del self.data_dict[key]
+            else:
+                self.data_dict = None
+        except:
+            print 'Could not find file: %s' % vgg16_npy_path
 
         self.var_dict = {}
         self.trainable = trainable
