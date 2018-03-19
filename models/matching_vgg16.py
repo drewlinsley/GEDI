@@ -20,6 +20,7 @@ class model_struct:
                 self.data_dict = None
         except:
             print 'Could not find file: %s' % vgg16_npy_path
+            self.data_dict = None
 
         self.var_dict = {}
         self.trainable = trainable
