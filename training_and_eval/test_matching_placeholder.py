@@ -292,39 +292,13 @@ def test_placeholder(
 
         mu = score_array.mean(0)
         sd = score_array.std(0)
-        z_score_array = (score_array - mu) / (sd + 1e-12)
+        z_score_array = (score_array - mu) / (sd + 1e-4)
         if embedding_type == 'TSNE' or embedding_type == 'tsne':
             emb = manifold.TSNE(n_components=2, init='pca', random_state=0)
         elif embedding_type == 'PCA' or embedding_type == 'pca':
             emb = PCA(n_components=2, svd_solver='randomized', random_state=0)
         elif embedding_type == 'spectral':
             emb = manifold.SpectralEmbedding(n_components=2, random_state=0)
-        y = emb.fit_transform(z_score_array)
-
-        # Ouput csv
-        df = pd.DataFrame(
-            np.hstack((
-                y,
-                pathologies.reshape(-1, 1),
-                file_array.reshape(-1, 1))),
-            columns=['dim1', 'dim2', 'pathology', 'filename'])
-        out_name = os.path.join(out_dir, 'embedding.csv')
-        df.to_csv(out_name)
-        print 'Saved csv to: %s' % out_name
-
-        # Create plot
-        plt_df = pd.read_csv(out_name)
-        sns.lmplot(
-            x='dim1',
-            y='dim2',
-            data=plt_df,
-            fit_reg=False,
-            hue='pathology',
-            legend=False)
-        plt.legend(loc='lower right')
-        plt.savefig('embedding.png')
-        sns.plt.show()
-        plt.close(f)
 
         y = emb.fit_transform(score_array)
 
@@ -352,6 +326,35 @@ def test_placeholder(
         plt.savefig('raw_embedding.png')
         sns.plt.show()
         plt.close(f)
+
+        # Now work on zscored data
+        y = emb.fit_transform(z_score_array)
+
+        # Ouput csv
+        df = pd.DataFrame(
+            np.hstack((
+                y,
+                pathologies.reshape(-1, 1),
+                file_array.reshape(-1, 1))),
+            columns=['dim1', 'dim2', 'pathology', 'filename'])
+        out_name = os.path.join(out_dir, 'embedding.csv')
+        df.to_csv(out_name)
+        print 'Saved csv to: %s' % out_name
+
+        # Create plot
+        plt_df = pd.read_csv(out_name)
+        sns.lmplot(
+            x='dim1',
+            y='dim2',
+            data=plt_df,
+            fit_reg=False,
+            hue='pathology',
+            legend=False)
+        plt.legend(loc='lower right')
+        plt.savefig('embedding.png')
+        sns.plt.show()
+        plt.close(f)
+
     else:
         # Do a classification (sign of the score)
         decisions = np.sign(score_array)
