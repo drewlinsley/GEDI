@@ -105,8 +105,8 @@ def test_vgg16(
     #     raise RuntimeError(
     #         'Cannot find the trained svm model. Check the path you passed.')
     try:
-        model_dict = cPickle.load(open(trained_svm, 'rb'))
-        clf = model_dict['clf']
+        clf = cPickle.load(open(trained_svm, 'rb'))
+        # clf = model_dict['clf']
         # mu = model_dict['mu']
         # sd = model_dict['sd']
     except:
