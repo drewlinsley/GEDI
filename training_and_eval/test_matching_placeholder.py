@@ -54,7 +54,7 @@ def process_image(
             ims, model_input_shape[:2])
         filenames = np.asarray(filename)
         if normalize:
-            ims /= ims.max()
+            ims /= (ims.max() + 1e-12)
             ims = np.maximum(np.minimum(ims, 1), 0)
     return ims, np.asarray(filenames)
 
