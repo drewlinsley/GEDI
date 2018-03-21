@@ -411,6 +411,12 @@ if __name__ == '__main__':
         default='match',
         help='Type of autopsy model [match/gedi].')
     parser.add_argument(
+        '--embedding',
+        type=str,
+        dest='embedding_type',
+        default='tsne',
+        help='Type of embedding [tsne/pca/spectral]')
+    parser.add_argument(
         '--out_dir',
         type=str,
         dest='out_dir',
