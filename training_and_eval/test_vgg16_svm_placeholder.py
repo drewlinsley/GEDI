@@ -264,23 +264,18 @@ def test_vgg16(
         p_value=p_value)
 
     # Also save a csv with item/guess pairs
-    try:
-        trimmed_files = [re.split('/', x)[-1] for x in combined_files]
-        trimmed_files = np.asarray(trimmed_files)
-        dec_scores = np.asarray(dec_scores)
-        yhat = np.asarray(yhat)
-        df = pd.DataFrame(
-            np.hstack((
-                trimmed_files.reshape(-1, 1),
-                yhat.reshape(-1, 1),
-                y.reshape(-1, 1))),
-            columns=['files', 'guesses', df_col_label])
-        df.to_csv(os.path.join(out_dir, 'prediction_file.csv'))
-        print 'Saved csv to: %s' % out_dir
-    except:
-        print 'X' * 60
-        print 'Could not save a spreadsheet of file info'
-        print 'X' * 60
+    trimmed_files = [re.split('/', x)[-1] for x in combined_files]
+    trimmed_files = np.asarray(trimmed_files)
+    dec_scores = np.asarray(dec_scores)
+    yhat = np.asarray(yhat)
+    df = pd.DataFrame(
+        np.hstack((
+            trimmed_files.reshape(-1, 1),
+            yhat.reshape(-1, 1),
+            y.reshape(-1, 1))),
+        columns=['files', 'guesses', df_col_label])
+    df.to_csv(os.path.join(out_dir, 'prediction_file.csv'))
+    print 'Saved csv to: %s' % out_dir
 
 
 if __name__ == '__main__':
