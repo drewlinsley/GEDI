@@ -264,9 +264,9 @@ def test_vgg16(
         p_value=p_value)
 
     # Also save a csv with item/guess pairs
-    ckpt_file_array = ckpt_file_array.ravel()
     trimmed_files = np.asarray(
-        [x.split(os.path.sep)[-1] for x in ckpt_file_array.ravel()])
+        [x.split(os.path.sep)[-1] for x in np.asarray(
+            ckpt_file_array).ravel()])
     yhat = np.asarray(yhat)
     df = pd.DataFrame(
         np.hstack((
