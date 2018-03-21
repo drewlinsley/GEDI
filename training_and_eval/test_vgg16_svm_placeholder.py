@@ -271,9 +271,9 @@ def test_vgg16(
     df = pd.DataFrame(
         np.hstack((
             trimmed_files.reshape(-1, 1),
-            yhat.reshape(-1, 1),
-            y.reshape(-1, 1))),
-        columns=['files', 'guesses', df_col_label])
+            yhat.reshape(-1, 1))),
+          #   y.reshape(-1, 1))),
+        columns=['files', 'guesses'])  # , df_col_label])
     df.to_csv(os.path.join(out_dir, 'prediction_file.csv'))
     print 'Saved csv to: %s' % out_dir
 
