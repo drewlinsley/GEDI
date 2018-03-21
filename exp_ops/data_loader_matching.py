@@ -129,24 +129,28 @@ def read_and_decode(
                 im = tf.image.random_flip_up_down(im)
                 split_image[idx] = im
         if 'rotate' in train:
+            max_theta = 360.
+            angle_rad = (max_theta / 180.) * math.pi
             for idx, im in enumerate(split_image):
-                random_rot = tf.squeeze(
-                    tf.multinomial(tf.log([[10., 10., 10., 10., 10.]]), 1))
-                rotation = tf.gather(
-                    [0., 45., 90., 180., 270.], random_rot) * tf.constant(
-                    math.pi) / 180.
-                im = tf.contrib.image.rotate(
-                    im, rotation)
-                split_image[idx] = im
+                angles = tf.random_uniform([], -angle_rad, angle_rad)
+                transform = tf.contrib.image.angles_to_projective_transforms(
+                    angles,
+                    im_size[0],
+                    im_size[1])
+                split_image[idx] = tf.contrib.image.transform(
+                    im,
+                    tf.contrib.image.compose_transforms(transform),
+                    interpolation='BILINEAR')  # or 'NEAREST'
+            print 'Applying random rotate.'
         if 'random_contrast' in train:
             for idx, im in enumerate(split_image):
                 im = tf.image.random_contrast(
-                    im, lower=0.0, upper=0.1)
+                    im, lower=0.0, upper=0.2)
                 split_image[idx] = im
         if 'random_brightness' in train:
             for idx, im in enumerate(split_image):
                 im = tf.image.random_brightness(
-                    im, max_delta=0.1)
+                    im, max_delta=0.2)
                 split_image[idx] = im
         if 'random_crop' in train and 'resize' not in train:
             for idx, im in enumerate(split_image):
