@@ -264,7 +264,7 @@ def test_vgg16(
         p_value=p_value)
 
     # Also save a csv with item/guess pairs
-    trimmed_files = [re.split('/', x)[-1] for x in combined_files]
+    trimmed_files = [re.split('/', x)[-1] for x in ckpt_file_array]
     trimmed_files = np.asarray(trimmed_files)
     dec_scores = np.asarray(dec_scores)
     yhat = np.asarray(yhat)
