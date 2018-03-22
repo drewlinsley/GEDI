@@ -17,6 +17,31 @@ from sklearn.decomposition import PCA
 from matplotlib import pyplot as plt
 
 
+def create_figs(emb, out_dir, out_name, embedding_type, embedding_name):
+    if embedding_type == 'PCA':
+        f = plt.figure()
+        plt.plot(emb.explained_variance_ratio_)
+        plt.title('Percentage of variance explained by the PCs.')
+        plt.savefig(
+            os.path.join(
+                out_dir,
+                'eigen_%s.png' % embedding_name))
+
+    # Create plot
+    plt_df = pd.read_csv(out_name)
+    sns.lmplot(
+        x='dim1',
+        y='dim2',
+        data=plt_df,
+        fit_reg=False,
+        hue='pathology',
+        legend=False)
+    plt.legend(loc='lower right')
+    plt.savefig('%s.png' % embedding_name)
+    sns.plt.show()
+    plt.close(f)
+
+
 def process_image(
         filename,
         model_input_shape,
@@ -313,19 +338,12 @@ def test_placeholder(
         df.to_csv(out_name)
         print 'Saved csv to: %s' % out_name
 
-        # Create plot
-        plt_df = pd.read_csv(out_name)
-        sns.lmplot(
-            x='dim1',
-            y='dim2',
-            data=plt_df,
-            fit_reg=False,
-            hue='pathology',
-            legend=False)
-        plt.legend(loc='lower right')
-        plt.savefig('raw_embedding.png')
-        sns.plt.show()
-        plt.close(f)
+        create_figs(
+            emb=emb,
+            out_dir=out_dir,
+            out_name=out_name,
+            embedding_type=embedding_type,
+            embedding_name='raw_embedding')
 
         # Now work on zscored data
         y = emb.fit_transform(z_score_array)
@@ -342,18 +360,12 @@ def test_placeholder(
         print 'Saved csv to: %s' % out_name
 
         # Create plot
-        plt_df = pd.read_csv(out_name)
-        sns.lmplot(
-            x='dim1',
-            y='dim2',
-            data=plt_df,
-            fit_reg=False,
-            hue='pathology',
-            legend=False)
-        plt.legend(loc='lower right')
-        plt.savefig('embedding.png')
-        sns.plt.show()
-        plt.close(f)
+        create_figs(
+            emb=emb,
+            out_dir=out_dir,
+            out_name=out_name,
+            embedding_type=embedding_type,
+            embedding_name='normalized_embedding')
 
     else:
         # Do a classification (sign of the score)
