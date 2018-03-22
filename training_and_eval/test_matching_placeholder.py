@@ -19,7 +19,6 @@ from matplotlib import pyplot as plt
 
 def create_figs(emb, out_dir, out_name, embedding_type, embedding_name):
     if embedding_type == 'PCA':
-        f = plt.figure()
         plt.plot(emb.explained_variance_ratio_)
         plt.title('Percentage of variance explained by the PCs.')
         plt.savefig(
@@ -39,7 +38,6 @@ def create_figs(emb, out_dir, out_name, embedding_type, embedding_name):
     plt.legend(loc='lower right')
     plt.savefig('%s.png' % embedding_name)
     sns.plt.show()
-    plt.close(f)
 
 
 def process_image(
@@ -390,13 +388,13 @@ if __name__ == '__main__':
         '--model_file',
         type=str,
         dest='model_file',
-        default='/media/data/GEDI/drew_images/project_files/train_checkpoint/gfp_2018_03_15_16_48_21/model_37500.ckpt-37500',  # None,
+        default='/media/data/GEDI/drew_images/project_files/train_checkpoint/gfp_2018_03_21_19_24_54/model_59000.ckpt-59000',  # None,
         help='Path to the model checkpoint file.')
     parser.add_argument(
         '--model_meta',
         type=str,
         dest='model_meta',
-        default='/media/data/GEDI/drew_images/project_files/results/gfp_2018_03_15_16_48_21/meta_info.npy',  # None,
+        default='/media/data/GEDI/drew_images/project_files/results/gfp_2018_03_21_19_24_54/meta_info.npy',  # None,
         help='Path to the model meta file.')
     parser.add_argument(
         '--n_images',
