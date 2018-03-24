@@ -12,7 +12,9 @@
    * This is the GEDI model saved into a numpy.
 3. https://mega.nz/#F!iY0zCaBQ!AzJHMIIEnYALG5xxnAWOFg
    * This is the tracking model.
-4. https://mega.nz/#!yQNRkJqI!Gv9qSWoGqbdV1MjdJ9WrrQ3OMx3qogMhWPLTrVVuSME
+4. https://mega.nz/#F!hbo1GAxT!Fj7eeSE7qWQBJBkhuXwQqQ
+   * This is a newer tracking model trained on full rotation augmentations
+5. https://mega.nz/#!yQNRkJqI!Gv9qSWoGqbdV1MjdJ9WrrQ3OMx3qogMhWPLTrVVuSME
    * This is a repackaging of the GEDI model into a .npy. Download this and add it to your config as `self.gedi_weight_path`.
 
 ## Last but not least, copy the 'gedi_config.py.template' file as 'gedi_config.py' and adjust it to match your system.
