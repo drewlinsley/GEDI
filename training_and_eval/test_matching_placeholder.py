@@ -388,7 +388,7 @@ if __name__ == '__main__':
         '--model_file',
         type=str,
         dest='model_file',
-        default='/media/data/GEDI/drew_images/project_files/train_checkpoint/gfp_2018_03_21_19_24_54/model_59000.ckpt-59000',  # None,
+        default='/media/data/GEDI/drew_images/project_files/train_checkpoint/gfp_2018_03_21_19_24_54/model_225500.ckpt-225500',  # None,
         help='Path to the model checkpoint file.')
     parser.add_argument(
         '--model_meta',

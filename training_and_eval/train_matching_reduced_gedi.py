@@ -16,8 +16,12 @@ def train_model(
         train_dir=None,
         validation_dir=None,
         debug=True,
+        resume_ckpt=None,
+        resume_meta=None,
         margin=.4):
     config = GEDIconfig()
+    if resume_meta is not None:
+        config = np.load(resume_meta).item()
     assert margin is not None, 'Need a margin for the loss.'
     if train_dir is None:  # Use globals
         train_data = os.path.join(
@@ -275,6 +279,13 @@ def train_model(
         for idx in range(len(val_image_list)):
             val_dict['val_im_%s' % idx] = val_image_list[idx]
 
+    # Resume training if requested
+    if resume_ckpt is not None:
+        print '*' * 50
+        print 'Resuming training from: %s' % resume_ckpt
+        print '*' * 50
+        saver.restore(sess, resume_ckpt)
+
     # Start training loop
     np.save(out_dir + 'meta_info', config)
     step, losses = 0, []
@@ -361,10 +372,25 @@ def train_model(
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument(
-        "--train_dir", type=str, dest="train_dir",
-        default=None, help="Directory of training data tfrecords bin file.")
+        "--train_dir", type=str,
+        dest="train_dir",
+        default=None,
+        help="Directory of training data tfrecords bin file.")
     parser.add_argument(
-        "--validation_dir", type=str, dest="validation_dir",
+        "--validation_dir",
+        type=str, dest="validation_dir",
         default=None, help="Directory of validation data tfrecords bin file.")
+    parser.add_argument(
+        "--resume_ckpt",
+        type=str,
+        dest="resume_ckpt",
+        default='/media/data/GEDI/drew_images/project_files/train_checkpoint/gfp_2018_03_25_10_25_10/model_167000.ckpt-167000',
+        help="File pointer for resume_ckpt.")
+    parser.add_argument(
+        "--resume_meta",
+        type=str,
+        dest="resume_meta",
+        default='/media/data/GEDI/drew_images/project_files/results/gfp_2018_03_25_10_25_10/meta_info.npy',
+        help="File pointer for resume_meta.")
     args = parser.parse_args()
     train_model(**vars(args))
