@@ -15,6 +15,10 @@ from tqdm import tqdm
 from sklearn import manifold
 from sklearn.decomposition import PCA
 from matplotlib import pyplot as plt
+from sklearn.pipeline import make_pipeline
+from sklearn.svm import LinearSVC
+from sklearn import preprocessing, metrics
+from sklearn.model_selection import cross_val_predict
 
 
 def create_figs(emb, out_dir, out_name, embedding_type, embedding_name):
@@ -128,6 +132,8 @@ def test_placeholder(
         debug=True,
         margin=.1,
         autopsy_csv=None,
+        C=1,
+        k_folds=10,
         embedding_type='tsne',
         autopsy_model='match'):
     config = GEDIconfig()
@@ -325,6 +331,29 @@ def test_placeholder(
 
         y = emb.fit_transform(score_array)
 
+        # Do a classification analysis
+        labels = np.unique(pathologies.reshape(-1, 1), return_inverse=True)[1]
+
+        # Run SVM
+        svm = LinearSVC(C=C, dual=False, class_weight='balanced')
+        clf = make_pipeline(preprocessing.StandardScaler(), svm)
+        predictions = cross_val_predict(clf, score_array, labels, cv=k_folds)
+        cv_performance = metrics.accuracy_score(predictions, labels)
+        clf.fit(score_array, labels)
+        # mu = dec_scores.mean(0)
+        # sd = dec_scores.std(0)
+        print '%s-fold SVM performance: accuracy = %s%%' % (
+            k_folds,
+            np.mean(cv_performance * 100))
+        np.savez(
+            os.path.join(out_dir, 'svm_data'),
+            yhat=score_array,
+            y=labels,
+            cv_performance=cv_performance,
+            # mu=mu,
+            # sd=sd,
+            C=C)
+
         # Ouput csv
         df = pd.DataFrame(
             np.hstack((
@@ -388,13 +417,13 @@ if __name__ == '__main__':
         '--model_file',
         type=str,
         dest='model_file',
-        default='/media/data/GEDI/drew_images/project_files/train_checkpoint/gfp_2018_03_21_19_24_54/model_225500.ckpt-225500',  # None,
+        default='/media/data/GEDI/drew_images/project_files/train_checkpoint/gfp_2018_03_25_10_25_10/gfp_2018_03_27_14_05_49/model_85000.ckpt-85000',  # None,
         help='Path to the model checkpoint file.')
     parser.add_argument(
         '--model_meta',
         type=str,
         dest='model_meta',
-        default='/media/data/GEDI/drew_images/project_files/results/gfp_2018_03_21_19_24_54/meta_info.npy',  # None,
+        default='/media/data/GEDI/drew_images/project_files/results/gfp_2018_03_27_14_05_49/meta_info.npy',  # None,
         help='Path to the model meta file.')
     parser.add_argument(
         '--n_images',
@@ -432,6 +461,11 @@ if __name__ == '__main__':
         dest='out_dir',
         default='autopsy_results',
         help='Output directory.')
+    parser.add_argument(
+        "--C",
+        type=float,
+        dest="C",
+        default=1e-3,
+        help="C parameter for your SVM.")
     args = parser.parse_args()
     test_placeholder(**vars(args))
-
