@@ -91,6 +91,7 @@ def test_vgg16(
         ims,
         dead_ims=None,
         output_csv='prediction_file',
+        training_max=None,
         C=1e-3,
         k_folds=10):
     """Test an SVM you've trained on a new dataset."""
@@ -140,7 +141,8 @@ def test_vgg16(
     meta_data = np.load(meta_file_pointer)
 
     # Prepare image normalization values
-    training_max = np.max(meta_data['max_array']).astype(np.float32)
+    if training_max is None:
+        training_max = np.max(meta_data['max_array']).astype(np.float32)
     training_min = np.min(meta_data['min_array']).astype(np.float32)
 
     # Find model checkpoints
@@ -310,6 +312,12 @@ if __name__ == '__main__':
         dest="trained_svm",
         default='trained_svm',
         help="Directory pointer to your trained svm model.")
+    parser.add_argument(
+        "--training_max",
+        type=float,
+        dest="training_max",
+        default=None,
+        help="Maximum intesity value.")
     parser.add_argument(
         "--C",
         type=float,

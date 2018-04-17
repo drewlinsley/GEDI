@@ -92,6 +92,7 @@ def test_vgg16(
         model_file,
         svm_model='svm_model',
         output_csv='prediction_file',
+        training_max=None,
         C=1e-3,
         k_folds=10):
     """Train an SVM for your dataset on GEDI-model encodings."""
@@ -126,7 +127,8 @@ def test_vgg16(
     meta_data = np.load(meta_file_pointer)
 
     # Prepare image normalization values
-    training_max = np.max(meta_data['max_array']).astype(np.float32)
+    if training_max is None:
+        training_max = np.max(meta_data['max_array']).astype(np.float32)
     training_min = np.min(meta_data['min_array']).astype(np.float32)
 
     # Find model checkpoints
@@ -319,5 +321,11 @@ if __name__ == '__main__':
         dest="C",
         default=1e-3,
         help="C parameter for your SVM.")
+    parser.add_argument(
+        "--training_max",
+        type=float,
+        dest="training_max",
+        default=None,
+        help="Maximum intesity value.")
     args = parser.parse_args()
     test_vgg16(**vars(args))
