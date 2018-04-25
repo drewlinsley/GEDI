@@ -77,7 +77,11 @@ def randomization_test(y, yhat, iterations=10000):
 
 
 # Evaluate your trained model on GEDI images
-def test_vgg16(image_dir, model_file, output_csv='prediction_file'):
+def test_vgg16(
+        image_dir,
+        model_file,
+        output_csv='prediction_file',
+        training_max=None):
 
     config = GEDIconfig()
     if image_dir is None:
@@ -103,7 +107,8 @@ def test_vgg16(image_dir, model_file, output_csv='prediction_file'):
     meta_data = np.load(meta_file_pointer)
 
     # Prepare image normalization values
-    training_max = np.max(meta_data['max_array']).astype(np.float32)
+    if training_max is None:
+        training_max = np.max(meta_data['max_array']).astype(np.float32)
     training_min = np.min(meta_data['min_array']).astype(np.float32)
 
     # Find model checkpoints
@@ -262,5 +267,11 @@ if __name__ == '__main__':
         dest="model_file",
         default='/Users/drewlinsley/Desktop/trained_gedi_model/model_58600.ckpt-58600',
         help="Folder containing your trained CNN's checkpoint files.")
+    parser.add_argument(
+        "--training_max",
+        type=float,
+        dest="training_max",
+        default=None,
+        help="Maximum intesity value.")
     args = parser.parse_args()
     test_vgg16(**vars(args))
